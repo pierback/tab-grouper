@@ -148,6 +148,47 @@ assert.equal(timedOut.providerErrorKind, "provider-timeout");
 assert.match(timedOut.providerError, /timed out/i);
 assert.equal(timedOut.plan.groups.length > 0, true);
 
+let openAIRequestBody = null;
+globalThis.fetch = async (url, options) => {
+  openAIRequestBody = JSON.parse(options.body);
+  return {
+    ok: true,
+    async json() {
+      return {
+        output_text: JSON.stringify({
+          groups: [],
+          assignments: [{ groupId: 7, tabIds: [1, 2] }]
+        })
+      };
+    }
+  };
+};
+
+const assignedPlan = await createGroupPlanWithFallback(
+  tabs,
+  {
+    provider: "openai",
+    openaiApiKey: "sk-test",
+    openaiModel: "gpt-test",
+    minimumGroupSize: 2
+  },
+  tabs,
+  [{ id: 7, title: "Berlin Trip", color: "cyan", tabIds: [9] }]
+);
+
+assert.equal(assignedPlan.provider, "openai");
+assert.deepEqual(assignedPlan.plan.assignments, [{ groupId: 7, tabIds: [1, 2] }]);
+const systemPrompt = openAIRequestBody.input[0].content[0].text;
+const userPrompt = openAIRequestBody.input[1].content[0].text;
+assert.match(systemPrompt, /existingGroups are current Chrome tab groups/);
+assert.match(systemPrompt, /prefer assignments to a fitting existing group/i);
+assert.match(systemPrompt, /\{"assignments":\[\{"groupId":3,"tabIds":\[7,8\]\}\]\}/);
+assert.match(systemPrompt, /intent or task first/);
+assert.match(systemPrompt, /short concrete noun phrases/);
+assert.match(systemPrompt, /never generic labels/);
+assert.match(userPrompt, /Add ungrouped tabs to matching existingGroups/);
+assert.match(userPrompt, /"title": "Berlin Trip"/);
+
 globalThis.chrome = originalChrome;
 globalThis.fetch = originalFetch;
 

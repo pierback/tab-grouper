@@ -535,11 +535,17 @@ function getStoredSnapshot(chrome, windowId) {
   });
   await importServiceWorker(chrome);
 
+  const preview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 8 });
+  assert.equal(preview.ok, true);
+  assert.equal(preview.preview, true);
+  assert.deepEqual(preview.groups, []);
+  assert.deepEqual(preview.assignments, [{ groupId: 7, title: "Codex Issues", count: 1 }]);
+
   const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 8 });
   assert.equal(tidy.ok, true);
   assert.equal(tidy.groupedCount, 1);
   assert.deepEqual(tidy.groups, []);
-  assert.deepEqual(tidy.assignments, [{ groupId: 7, count: 1 }]);
+  assert.deepEqual(tidy.assignments, [{ groupId: 7, title: "Codex Issues", count: 1 }]);
   assert.match(tidy.message, /Added 1 tab to existing groups/);
   assert.match(promptText, /"existingGroups"/);
   assert.equal(chrome.__state.tabs.find((tab) => tab.id === 2).groupId, 7);

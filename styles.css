@@ -198,7 +198,7 @@ select {
 
 .group-list li {
   display: grid;
-  grid-template-columns: 14px 1fr auto;
+  grid-template-columns: 32px 1fr auto;
   align-items: center;
   gap: 8px;
 }
@@ -208,6 +208,11 @@ select {
   height: 12px;
   border-radius: 999px;
   border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.assignment-marker {
+  color: var(--accent-strong);
+  font-weight: 700;
 }
 
 .swatch-grey { background: #9aa0a6; }

@@ -7,7 +7,7 @@ import {
   pageHintPermissionPattern,
   shouldUsePageHints
 } from "./lib/page_hints.js";
-import { buildTidySuccessMessage, createPlanResponse } from "./lib/plan_response.js";
+import { buildExistingGroupTitleMap, buildTidySuccessMessage, createPlanResponse } from "./lib/plan_response.js";
 import { normalizeGroupPlan } from "./lib/schema.js";
 import { getSettings, publicSettingsSummary } from "./lib/settings.js";
 import { getTabSkipReason, isGroupableTab, tabToLocalRecord, tabToPromptRecord } from "./lib/tabs.js";
@@ -115,6 +115,7 @@ async function tidyCurrentWindow(windowId, grantedHintOrigins = []) {
   }
 
   const preTidyGroups = await chrome.tabGroups.query({ windowId });
+  const titleByGroupId = buildExistingGroupTitleMap(preTidyGroups);
   const appliedGroups = [];
   const appliedAssignments = [];
   const changedTabIds = [
@@ -170,6 +171,7 @@ async function tidyCurrentWindow(windowId, grantedHintOrigins = []) {
       }));
       appliedAssignments.push({
         groupId: assignment.groupId,
+        title: titleByGroupId.get(assignment.groupId) || `Group ${assignment.groupId}`,
         tabIds: assignment.tabIds,
         count: assignment.tabIds.length
       });
@@ -210,6 +212,7 @@ async function tidyCurrentWindow(windowId, grantedHintOrigins = []) {
     groups: appliedGroups,
     assignments: appliedAssignments.map((assignment) => ({
       groupId: assignment.groupId,
+      title: assignment.title,
       count: assignment.count
     })),
     skipped: planResult.skipped,
@@ -263,6 +266,7 @@ async function buildCurrentWindowPlan(windowId, grantedHintOrigins = []) {
         tabs,
         groupableTabs,
         skipped,
+        existingGroups,
         plan: { groups: [], assignments: [] },
         providerResult: {
           provider: settings.provider,
@@ -291,6 +295,7 @@ async function buildCurrentWindowPlan(windowId, grantedHintOrigins = []) {
       tabs,
       groupableTabs,
       skipped,
+      existingGroups,
       plan,
       providerResult
     };
@@ -385,6 +390,7 @@ async function revalidatePlanBeforeApply(planResult, windowId) {
     tabs,
     groupableTabs,
     skipped,
+    existingGroups,
     plan
   };
 }

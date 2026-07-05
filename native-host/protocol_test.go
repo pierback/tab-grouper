@@ -128,6 +128,12 @@ func TestValidateRequestRejectsInvalidTabContextSource(t *testing.T) {
 
 func TestValidateRequestValidatesExistingGroups(t *testing.T) {
 	request := validRequest()
+	request.ExistingGroups = []ExistingGroup{{ID: 1, Title: "Group", Color: "blue", TabIDs: []int{1, 2}}}
+	if err := ValidateRequest(request); err != nil {
+		t.Fatalf("expected existing group to validate: %v", err)
+	}
+
+	request = validRequest()
 	for index := 0; index < MaxExistingGroups+1; index++ {
 		request.ExistingGroups = append(request.ExistingGroups, ExistingGroup{ID: index + 1, Title: "Group", Color: "blue"})
 	}
@@ -145,6 +151,36 @@ func TestValidateRequestValidatesExistingGroups(t *testing.T) {
 	request.ExistingGroups = []ExistingGroup{{ID: 1, Title: "Group", Color: "chartreuse"}}
 	if err := ValidateRequest(request); err == nil {
 		t.Fatal("expected invalid existing group color to fail validation")
+	}
+
+	request = validRequest()
+	request.ExistingGroups = []ExistingGroup{{ID: 0, Title: "Group", Color: "blue"}}
+	if err := ValidateRequest(request); err == nil {
+		t.Fatal("expected non-positive existing group id to fail validation")
+	}
+
+	request = validRequest()
+	request.ExistingGroups = []ExistingGroup{
+		{ID: 1, Title: "First", Color: "blue"},
+		{ID: 1, Title: "Second", Color: "green"},
+	}
+	if err := ValidateRequest(request); err == nil {
+		t.Fatal("expected duplicate existing group id to fail validation")
+	}
+
+	request = validRequest()
+	request.ExistingGroups = []ExistingGroup{{ID: 1, Title: "Group", Color: "blue", TabIDs: []int{1, 0}}}
+	if err := ValidateRequest(request); err == nil {
+		t.Fatal("expected non-positive existing group tab id to fail validation")
+	}
+
+	request = validRequest()
+	request.ExistingGroups = []ExistingGroup{{ID: 1, Title: "Group", Color: "blue", TabIDs: make([]int, MaxGroupTabIDs+1)}}
+	for index := range request.ExistingGroups[0].TabIDs {
+		request.ExistingGroups[0].TabIDs[index] = index + 1
+	}
+	if err := ValidateRequest(request); err == nil {
+		t.Fatal("expected oversized existing group tab ids to fail validation")
 	}
 }
 

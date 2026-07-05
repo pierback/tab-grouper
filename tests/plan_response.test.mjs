@@ -127,6 +127,21 @@ assert.equal(
   "Would add 1 tab to existing groups."
 );
 
+assert.deepEqual(
+  createPlanResponse({
+    canApply: true,
+    reason: "ready",
+    skipped: { pinned: 0, alreadyGrouped: 0, missingUrl: 0 },
+    existingGroups: [{ id: 7, title: "Berlin Trip", color: "cyan", tabIds: [4, 5] }],
+    plan: {
+      groups: [],
+      assignments: [{ groupId: 7, tabIds: [1, 2] }]
+    },
+    providerResult: { provider: "openai", usedFallback: false, providerError: "", providerErrorKind: "" }
+  }, { preview: true }).assignments,
+  [{ groupId: 7, title: "Berlin Trip", count: 2 }]
+);
+
 assert.equal(
   buildTidySuccessMessage(
     [],

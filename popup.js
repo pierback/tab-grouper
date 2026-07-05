@@ -1,4 +1,4 @@
-import { getProviderLabel } from "./lib/provider_metadata.js";
+import { getAllProviderOrigins, getProviderLabel } from "./lib/provider_metadata.js";
 import { pageHintPermissionPatternsForTabs, shouldUsePageHints } from "./lib/page_hints.js";
 import { normalizeSettings } from "./lib/settings.js";
 import { isGroupableTab } from "./lib/tabs.js";
@@ -100,7 +100,9 @@ async function preparePageHintPermissions(windowId) {
 
   const tabs = await chrome.tabs.query({ windowId });
   const groupableTabs = tabs.filter((tab) => isGroupableTab(tab, settings));
-  const origins = pageHintPermissionPatternsForTabs(groupableTabs);
+  const providerOrigins = new Set(getAllProviderOrigins());
+  const origins = pageHintPermissionPatternsForTabs(groupableTabs)
+    .filter((origin) => !providerOrigins.has(origin));
   if (origins.length === 0) {
     return [];
   }
@@ -152,15 +154,20 @@ function renderResult(response) {
   result.append(title);
   appendProviderDetails(response);
 
-  if (!response.groups?.length) {
+  if (!response.groups?.length && !response.assignments?.length) {
     return;
   }
 
   const list = document.createElement("ul");
   list.className = "group-list";
-  for (const group of response.groups) {
+  for (const group of response.groups || []) {
     const item = document.createElement("li");
     item.innerHTML = `<span class="swatch swatch-${group.color}"></span><span>${escapeHtml(group.name)}</span><strong>${group.count}</strong>`;
+    list.append(item);
+  }
+  for (const assignment of response.assignments || []) {
+    const item = document.createElement("li");
+    item.innerHTML = `<span class="assignment-marker">+${assignment.count}</span><span>-&gt; ${escapeHtml(assignment.title || `Group ${assignment.groupId}`)}</span>`;
     list.append(item);
   }
   result.append(list);

@@ -17,6 +17,7 @@ const (
 	MaxMessageBytes   = 1024 * 1024
 	MaxTabs           = 200
 	MaxExistingGroups = 50
+	MaxGroupTabIDs    = 100
 )
 
 type Tab struct {
@@ -184,12 +185,25 @@ func ValidateRequest(request Request) error {
 	if len(request.ExistingGroups) > MaxExistingGroups {
 		return errors.New("invalid existing group count")
 	}
+	seenGroupIDs := map[int]bool{}
 	for _, group := range request.ExistingGroups {
+		if group.ID <= 0 || seenGroupIDs[group.ID] {
+			return errors.New("invalid existing group id")
+		}
+		seenGroupIDs[group.ID] = true
 		if len(group.Title) > 64 {
 			return errors.New("existing group title is too large")
 		}
 		if group.Color != "" && !isAllowedTabGroupColor(group.Color) {
 			return errors.New("invalid existing group color")
+		}
+		if len(group.TabIDs) > MaxGroupTabIDs {
+			return errors.New("invalid existing group tab count")
+		}
+		for _, tabID := range group.TabIDs {
+			if tabID <= 0 {
+				return errors.New("invalid existing group tab id")
+			}
 		}
 	}
 	return nil
