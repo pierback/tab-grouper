@@ -39,9 +39,15 @@ assert.equal(
       { name: "Dev Docs", count: 3 }
     ],
     readyPlan.skipped,
-    { usedFallback: true, providerErrorKind: "missing-host-permission" }
+    {
+      provider: "heuristic",
+      requestedProvider: "openai",
+      usedFallback: true,
+      providerError: "OpenAI API host permission is missing.",
+      providerErrorKind: "missing-host-permission"
+    }
   ),
-  "Created 2 groups. Used local fallback because API host permission is missing. Skipped 2 already grouped, 1 pinned."
+  "Created 2 groups. Used Local heuristic instead of OpenAI API. API host permission is missing. Provider error: OpenAI API host permission is missing. Skipped 2 already grouped, 1 pinned."
 );
 
 assert.deepEqual(createPlanResponse(readyPlan, { preview: true }), {
@@ -64,35 +70,35 @@ assert.deepEqual(createPlanResponse(readyPlan, { preview: true }), {
 
 assert.equal(
   buildNoGroupsMessage({ usedFallback: true }),
-  "Used local fallback. Local fallback found no useful groups."
+  "Used Local heuristic instead of the requested provider. Local fallback found no useful groups."
 );
 assert.equal(
-  buildFallbackText({ usedFallback: true, providerErrorKind: "missing-api-key" }),
-  "Used local fallback because the API key is missing."
+  buildFallbackText({ provider: "heuristic", requestedProvider: "openai", usedFallback: true, providerError: "Add an OpenAI API key.", providerErrorKind: "missing-api-key" }),
+  "Used Local heuristic instead of OpenAI API. API key is missing. Provider error: Add an OpenAI API key."
 );
 assert.equal(
-  buildFallbackText({ usedFallback: true, providerErrorKind: "provider-timeout" }),
-  "Used local fallback because the provider timed out."
+  buildFallbackText({ provider: "heuristic", requestedProvider: "openai", usedFallback: true, providerError: "OpenAI request timed out.", providerErrorKind: "provider-timeout" }),
+  "Used Local heuristic instead of OpenAI API. Provider timed out. Provider error: OpenAI request timed out."
 );
 assert.equal(
-  buildFallbackText({ usedFallback: true, providerErrorKind: "native-host-not-found" }),
-  "Used local fallback because the local CLI bridge is not installed."
+  buildFallbackText({ provider: "heuristic", requestedProvider: "local-codex-cli", usedFallback: true, providerError: "Bridge missing.", providerErrorKind: "native-host-not-found" }),
+  "Used Local heuristic instead of Local Codex CLI. Local CLI bridge is not installed. Provider error: Bridge missing."
 );
 assert.equal(
-  buildFallbackText({ usedFallback: true, providerErrorKind: "native-host-config-error" }),
-  "Used local fallback because the local CLI bridge is not configured correctly."
+  buildFallbackText({ provider: "heuristic", requestedProvider: "local-codex-cli", usedFallback: true, providerError: "Config invalid.", providerErrorKind: "native-host-config-error" }),
+  "Used Local heuristic instead of Local Codex CLI. Local CLI bridge is not configured correctly. Provider error: Config invalid."
 );
 assert.equal(
-  buildFallbackText({ usedFallback: true, providerErrorKind: "cli-auth-missing" }),
-  "Used local fallback because the selected CLI is not signed in."
+  buildFallbackText({ provider: "heuristic", requestedProvider: "local-codex-cli", usedFallback: true, providerError: "Sign in required.", providerErrorKind: "cli-auth-missing" }),
+  "Used Local heuristic instead of Local Codex CLI. Selected CLI is not signed in. Provider error: Sign in required."
 );
 assert.equal(
-  buildFallbackText({ usedFallback: true, providerErrorKind: "cli-error" }),
-  "Used local fallback because the selected CLI failed."
+  buildFallbackText({ provider: "heuristic", requestedProvider: "local-codex-cli", usedFallback: true, providerError: "CLI exited 1.", providerErrorKind: "cli-error" }),
+  "Used Local heuristic instead of Local Codex CLI. Selected CLI failed. Provider error: CLI exited 1."
 );
 assert.equal(
-  buildFallbackText({ usedFallback: true, providerErrorKind: "malformed-output" }),
-  "Used local fallback because the local CLI returned invalid JSON."
+  buildFallbackText({ provider: "heuristic", requestedProvider: "local-codex-cli", usedFallback: true, providerError: "Could not parse JSON.", providerErrorKind: "malformed-output" }),
+  "Used Local heuristic instead of Local Codex CLI. Local CLI returned invalid JSON. Provider error: Could not parse JSON."
 );
 assert.equal(
   buildPlanMessage({

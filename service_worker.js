@@ -28,7 +28,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     withWindowTidyLock(windowId, () => tidyCurrentWindow(windowId))
       .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+      .catch((error) => sendResponse(createErrorResponse(error)));
     return true;
   }
 
@@ -40,7 +40,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     previewCurrentWindow(windowId)
       .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+      .catch((error) => sendResponse(createErrorResponse(error)));
     return true;
   }
 
@@ -52,7 +52,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     undoLastTidy(windowId)
       .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+      .catch((error) => sendResponse(createErrorResponse(error)));
     return true;
   }
 
@@ -64,7 +64,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     getStatus(windowId)
       .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+      .catch((error) => sendResponse(createErrorResponse(error)));
     return true;
   }
 
@@ -79,6 +79,16 @@ function createInvalidWindowResponse() {
   return {
     ok: false,
     error: "A valid Chrome window id is required."
+  };
+}
+
+function createErrorResponse(error) {
+  const message = error?.message || String(error);
+  return {
+    ok: false,
+    error: message,
+    providerError: message,
+    providerErrorKind: error?.providerErrorKind || ""
   };
 }
 

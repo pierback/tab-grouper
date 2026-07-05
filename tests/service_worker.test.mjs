@@ -378,6 +378,34 @@ function getStoredSnapshot(chrome, windowId) {
 {
   const chrome = createFakeChrome({
     tabs: [
+      { id: 1, title: "OpenAI Docs", url: "https://developers.openai.com/api", windowId: 8, index: 0 },
+      { id: 2, title: "Chrome Extensions", url: "https://developer.chrome.com/docs/extensions", windowId: 8, index: 1 }
+    ],
+    storage: {
+      provider: "openai",
+      openaiApiKey: "sk-test",
+      openaiModel: "gpt-test",
+      allowHeuristicFallback: false
+    },
+    permissionContains: false
+  });
+  await importServiceWorker(chrome);
+
+  const preview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 8 });
+  assert.equal(preview.ok, false);
+  assert.equal(preview.providerErrorKind, "missing-host-permission");
+  assert.match(preview.providerError, /host permission is missing/i);
+
+  const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 8 });
+  assert.equal(tidy.ok, false);
+  assert.equal(tidy.providerErrorKind, "missing-host-permission");
+  assert.match(tidy.providerError, /host permission is missing/i);
+  assert.equal(chrome.__state.tabs.every((tab) => tab.groupId === -1), true);
+}
+
+{
+  const chrome = createFakeChrome({
+    tabs: [
       { id: 1, title: "Codex Issue", url: "https://github.com/openai/codex/issues/1", windowId: 2, index: 0, groupId: 7 },
       { id: 2, title: "Codex PR", url: "https://github.com/openai/codex/pull/2", windowId: 2, index: 1, groupId: -1 },
       { id: 3, title: "Existing Group", url: "https://example.com", windowId: 2, index: 2, groupId: 7 }

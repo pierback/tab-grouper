@@ -9,6 +9,7 @@ const normalized = normalizeSettings({
   anthropicModel: "x".repeat(120),
   includeFullUrls: "true",
   includePageHints: "true",
+  allowHeuristicFallback: false,
   ignorePinnedTabs: "false",
   keepExistingGroups: "false",
   collapseGroups: "true",
@@ -22,6 +23,7 @@ assert.equal(normalized.anthropicApiKey, "sk-ant-test");
 assert.equal(normalized.anthropicModel.length, 80);
 assert.equal(normalized.includeFullUrls, false);
 assert.equal(normalized.includePageHints, false);
+assert.equal(normalized.allowHeuristicFallback, false);
 assert.equal(normalized.ignorePinnedTabs, true);
 assert.equal(normalized.keepExistingGroups, true);
 assert.equal(normalized.collapseGroups, false);
@@ -32,6 +34,7 @@ assert.deepEqual(
     provider: "anthropic",
     includeFullUrls: true,
     includePageHints: true,
+    allowHeuristicFallback: false,
     ignorePinnedTabs: false,
     keepExistingGroups: false,
     collapseGroups: true,
@@ -43,6 +46,7 @@ assert.deepEqual(
     anthropicModel: DEFAULT_SETTINGS.anthropicModel,
     includeFullUrls: true,
     includePageHints: true,
+    allowHeuristicFallback: false,
     ignorePinnedTabs: false,
     keepExistingGroups: false,
     collapseGroups: true,
@@ -76,12 +80,14 @@ Object.assign(storageState, {
 assert.equal((await getSettings()).provider, "heuristic");
 assert.equal((await getSettings()).minimumGroupSize, 2);
 assert.equal((await getSettings()).includeFullUrls, false);
+assert.equal((await getSettings()).allowHeuristicFallback, true);
 
 await saveSettings({
   provider: "local-codex-cli",
   minimumGroupSize: 20,
   includeFullUrls: "yes",
   includePageHints: true,
+  allowHeuristicFallback: false,
   openaiApiKey: " key "
 });
 
@@ -89,6 +95,7 @@ assert.equal(storageState.provider, "local-codex-cli");
 assert.equal(storageState.minimumGroupSize, 10);
 assert.equal(storageState.includeFullUrls, false);
 assert.equal(storageState.includePageHints, true);
+assert.equal(storageState.allowHeuristicFallback, false);
 assert.equal(storageState.openaiApiKey, "key");
 
 console.log("Settings tests passed.");

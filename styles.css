@@ -184,6 +184,10 @@ select {
   font-weight: 700;
 }
 
+.provider-details {
+  margin-top: 8px;
+}
+
 .group-list {
   display: grid;
   gap: 8px;

@@ -105,6 +105,7 @@ function readFormSettings() {
     anthropicModel: String(formData.get("anthropicModel") || DEFAULT_SETTINGS.anthropicModel).trim(),
     includeFullUrls: formData.get("includeFullUrls") === "on",
     includePageHints: includePageHintsInput ? formData.get("includePageHints") === "on" : false,
+    allowHeuristicFallback: formData.get("allowHeuristicFallback") === "on",
     ignorePinnedTabs: formData.get("ignorePinnedTabs") === "on",
     keepExistingGroups: formData.get("keepExistingGroups") === "on",
     collapseGroups: formData.get("collapseGroups") === "on",

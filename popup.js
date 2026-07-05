@@ -136,17 +136,17 @@ function setBusy(isBusy, action = "tidy") {
 }
 
 function renderResult(response) {
-  if (!response.groups?.length) {
-    renderMessage(response.message || "No groups created.");
-    return;
-  }
-
   result.className = "result";
   result.innerHTML = "";
   const title = document.createElement("p");
   title.className = "result-title";
-  title.textContent = response.message;
+  title.textContent = response.message || "No groups created.";
   result.append(title);
+  appendProviderDetails(response);
+
+  if (!response.groups?.length) {
+    return;
+  }
 
   const list = document.createElement("ul");
   list.className = "group-list";
@@ -156,6 +156,36 @@ function renderResult(response) {
     list.append(item);
   }
   result.append(list);
+}
+
+function appendProviderDetails(response) {
+  const detailsHtml = buildProviderDetailsHtml(response);
+  if (!detailsHtml) {
+    return;
+  }
+  const details = document.createElement("p");
+  details.className = "provider-details";
+  details.innerHTML = detailsHtml;
+  result.append(details);
+}
+
+function buildProviderDetailsHtml(response) {
+  if (response.usedFallback) {
+    const requestedProvider = getProviderLabel(response.requestedProvider || response.provider);
+    const actualProvider = getProviderLabel(response.provider || "heuristic");
+    const providerError = response.providerError || "No provider error message was returned.";
+    return [
+      `Requested provider: <strong>${escapeHtml(requestedProvider)}</strong>.`,
+      `Actual provider: <strong>${escapeHtml(actualProvider)}</strong>.`,
+      `Provider error: ${escapeHtml(providerError)}`
+    ].join(" ");
+  }
+
+  if (response.provider && response.provider !== "heuristic") {
+    return `AI provider: <strong>${escapeHtml(getProviderLabel(response.provider))}</strong>.`;
+  }
+
+  return "";
 }
 
 function updateUndoButton(isAvailable) {

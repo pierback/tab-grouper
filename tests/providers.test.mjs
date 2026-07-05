@@ -31,6 +31,19 @@ assert.equal(fallback.usedFallback, true);
 assert.match(fallback.providerError, /built-in AI/i);
 assert.equal(fallback.plan.groups.length > 0, true);
 
+await assert.rejects(
+  createGroupPlanWithFallback(tabs, {
+    provider: "chrome-ai",
+    allowHeuristicFallback: false,
+    minimumGroupSize: 2
+  }),
+  (error) => {
+    assert.equal(error.providerErrorKind, "provider-error");
+    assert.match(error.message, /built-in AI/i);
+    return true;
+  }
+);
+
 globalThis.chrome = {
   permissions: {
     async contains() {
@@ -79,6 +92,25 @@ assert.equal(missingPermission.usedFallback, true);
 assert.equal(missingPermission.providerErrorKind, "missing-host-permission");
 assert.match(missingPermission.providerError, /host permission is missing/i);
 assert.equal(missingPermission.plan.groups.length > 0, true);
+
+await assert.rejects(
+  createGroupPlanWithFallback(
+    tabs,
+    {
+      provider: "openai",
+      openaiApiKey: "sk-test",
+      openaiModel: "gpt-test",
+      allowHeuristicFallback: false,
+      minimumGroupSize: 2
+    },
+    tabs
+  ),
+  (error) => {
+    assert.equal(error.providerErrorKind, "missing-host-permission");
+    assert.match(error.message, /host permission is missing/i);
+    return true;
+  }
+);
 
 globalThis.chrome = {
   permissions: {

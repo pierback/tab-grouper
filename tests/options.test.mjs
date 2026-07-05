@@ -57,6 +57,7 @@ function createFakeElements() {
     ["anthropicModel", "text", "claude-sonnet-4-6-20260217"],
     ["includeFullUrls", "checkbox", false],
     ["includePageHints", "checkbox", false],
+    ["allowHeuristicFallback", "checkbox", true],
     ["ignorePinnedTabs", "checkbox", true],
     ["keepExistingGroups", "checkbox", true],
     ["collapseGroups", "checkbox", false],
@@ -243,6 +244,7 @@ function createFakeChrome({ permissionGrant, stored, nativeStatus }) {
   assert.equal(chrome.__state.permissionRequests.length, 0);
   assert.deepEqual(chrome.__state.permissionRemovals, [{ origins: ["https://api.openai.com/*", "https://api.anthropic.com/*"], permissions: ["nativeMessaging"] }]);
   assert.equal(chrome.__state.storage.provider, "heuristic");
+  assert.equal(chrome.__state.storage.allowHeuristicFallback, true);
   assert.equal(elements["save-status"].classList.contains("error-text"), false);
 }
 
@@ -253,15 +255,18 @@ function createFakeChrome({ permissionGrant, stored, nativeStatus }) {
   assert.deepEqual(chrome.__state.permissionRequests, [{ origins: ["https://api.openai.com/*"] }]);
   assert.deepEqual(chrome.__state.permissionRemovals, [{ origins: ["https://api.anthropic.com/*"], permissions: ["nativeMessaging"] }]);
   assert.equal(chrome.__state.storage.provider, "openai");
+  assert.equal(chrome.__state.storage.allowHeuristicFallback, true);
 }
 
 {
   const { elements, chrome } = await importOptions();
   elements.provider.value = "local-codex-cli";
+  elements.allowHeuristicFallback.checked = false;
   await elements["settings-form"].dispatch("submit");
   assert.deepEqual(chrome.__state.permissionRequests, [{ permissions: ["nativeMessaging"] }]);
   assert.deepEqual(chrome.__state.permissionRemovals, [{ origins: ["https://api.openai.com/*", "https://api.anthropic.com/*"] }]);
   assert.equal(chrome.__state.storage.provider, "local-codex-cli");
+  assert.equal(chrome.__state.storage.allowHeuristicFallback, false);
 }
 
 {
