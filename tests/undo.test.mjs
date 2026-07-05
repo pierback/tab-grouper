@@ -29,7 +29,11 @@ assert.deepEqual(
   {
     canUndo: true,
     tabIdsToUngroup: [1, 2],
-    originalGroups: []
+    originalGroups: [],
+    tabMoves: [
+      { tabId: 1, index: 0 },
+      { tabId: 2, index: 1 }
+    ]
   }
 );
 
@@ -41,7 +45,8 @@ assert.deepEqual(
   {
     canUndo: false,
     tabIdsToUngroup: [],
-    originalGroups: []
+    originalGroups: [],
+    tabMoves: []
   }
 );
 
@@ -53,7 +58,10 @@ assert.deepEqual(
   {
     canUndo: true,
     tabIdsToUngroup: [2],
-    originalGroups: []
+    originalGroups: [],
+    tabMoves: [
+      { tabId: 2, index: 1 }
+    ]
   }
 );
 
@@ -79,6 +87,10 @@ assert.deepEqual(
     tabIdsToUngroup: [1, 2],
     originalGroups: [
       { id: 7, title: "Original", color: "purple", collapsed: false, tabIds: [1] }
+    ],
+    tabMoves: [
+      { tabId: 1, index: 0 },
+      { tabId: 2, index: 1 }
     ]
   }
 );
@@ -91,14 +103,18 @@ assert.deepEqual(
   {
     canUndo: true,
     tabIdsToUngroup: [2],
-    originalGroups: []
+    originalGroups: [],
+    tabMoves: [
+      { tabId: 2, index: 1 }
+    ]
   }
 );
 
 assert.deepEqual(createUndoPlan(null, []), {
   canUndo: false,
   tabIdsToUngroup: [],
-  originalGroups: []
+  originalGroups: [],
+  tabMoves: []
 });
 
 console.log("Undo tests passed.");

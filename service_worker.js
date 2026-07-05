@@ -1,4 +1,5 @@
 import { createGroupPlanWithFallback } from "./lib/providers.js";
+import { getProviderOrigins } from "./lib/provider_metadata.js";
 import {
   extractSuperficialPageHintParts,
   normalizePageHintParts,
@@ -18,15 +19,17 @@ import {
 } from "./lib/undo.js";
 
 const activeTidiesByWindow = new Set();
+let snapshotMutationQueue = Promise.resolve();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "TIDY_CURRENT_WINDOW") {
     const windowId = readMessageWindowId(message);
+    const grantedHintOrigins = readGrantedHintOrigins(message);
     if (!Number.isInteger(windowId)) {
       sendResponse(createInvalidWindowResponse());
       return false;
     }
-    withWindowTidyLock(windowId, () => tidyCurrentWindow(windowId))
+    withWindowTidyLock(windowId, () => tidyCurrentWindow(windowId, grantedHintOrigins))
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
     return true;
@@ -34,11 +37,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "PREVIEW_CURRENT_WINDOW") {
     const windowId = readMessageWindowId(message);
+    const grantedHintOrigins = readGrantedHintOrigins(message);
     if (!Number.isInteger(windowId)) {
       sendResponse(createInvalidWindowResponse());
       return false;
     }
-    previewCurrentWindow(windowId)
+    previewCurrentWindow(windowId, grantedHintOrigins)
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
     return true;
@@ -82,8 +86,15 @@ function createInvalidWindowResponse() {
   };
 }
 
-async function tidyCurrentWindow(windowId) {
-  let planResult = await buildCurrentWindowPlan(windowId);
+function readGrantedHintOrigins(message) {
+  if (!Array.isArray(message?.grantedHintOrigins)) {
+    return [];
+  }
+  return Array.from(new Set(message.grantedHintOrigins.filter((origin) => typeof origin === "string" && origin)));
+}
+
+async function tidyCurrentWindow(windowId, grantedHintOrigins = []) {
+  let planResult = await buildCurrentWindowPlan(windowId, grantedHintOrigins);
   if (planResult.canApply) {
     planResult = await revalidatePlanBeforeApply(planResult, windowId);
   }
@@ -187,54 +198,58 @@ async function withWindowTidyLock(windowId, callback) {
   }
 }
 
-async function previewCurrentWindow(windowId) {
-  const planResult = await buildCurrentWindowPlan(windowId);
+async function previewCurrentWindow(windowId, grantedHintOrigins = []) {
+  const planResult = await buildCurrentWindowPlan(windowId, grantedHintOrigins);
   return createPlanResponse(planResult, { preview: true });
 }
 
-async function buildCurrentWindowPlan(windowId) {
+async function buildCurrentWindowPlan(windowId, grantedHintOrigins = []) {
   const settings = await getSettings();
-  const tabs = await chrome.tabs.query({ windowId });
-  const skipped = countSkipReasons(tabs, settings);
-  const groupableTabs = tabs.filter((tab) => isGroupableTab(tab, settings));
+  try {
+    const tabs = await chrome.tabs.query({ windowId });
+    const skipped = countSkipReasons(tabs, settings);
+    const groupableTabs = tabs.filter((tab) => isGroupableTab(tab, settings));
 
-  if (groupableTabs.length < Number(settings.minimumGroupSize || 2)) {
+    if (groupableTabs.length < Number(settings.minimumGroupSize || 2)) {
+      return {
+        canApply: false,
+        reason: "too-few-tabs",
+        settings,
+        tabs,
+        groupableTabs,
+        skipped,
+        plan: { groups: [] },
+        providerResult: {
+          provider: settings.provider,
+          usedFallback: false,
+          providerError: "",
+          providerErrorKind: ""
+        }
+      };
+    }
+
+    const pageHintsByTabId = await collectPageHints(groupableTabs, settings);
+    const promptTabs = groupableTabs.map((tab) => tabToPromptRecord({
+      ...tab,
+      pageHint: pageHintsByTabId.get(tab.id) || ""
+    }, settings));
+    const localTabs = groupableTabs.map((tab) => tabToLocalRecord(tab));
+    const providerResult = await createGroupPlanWithFallback(promptTabs, settings, localTabs);
+    const plan = normalizeGroupPlan(providerResult.plan, groupableTabs, settings);
+
     return {
-      canApply: false,
-      reason: "too-few-tabs",
+      canApply: plan.groups.length > 0,
+      reason: plan.groups.length > 0 ? "ready" : "no-groups",
       settings,
       tabs,
       groupableTabs,
       skipped,
-      plan: { groups: [] },
-      providerResult: {
-        provider: settings.provider,
-        usedFallback: false,
-        providerError: "",
-        providerErrorKind: ""
-      }
+      plan,
+      providerResult
     };
+  } finally {
+    await cleanupGrantedHintPermissions(grantedHintOrigins, settings);
   }
-
-  const pageHintsByTabId = await collectPageHints(groupableTabs, settings);
-  const promptTabs = groupableTabs.map((tab) => tabToPromptRecord({
-    ...tab,
-    pageHint: pageHintsByTabId.get(tab.id) || ""
-  }, settings));
-  const localTabs = groupableTabs.map((tab) => tabToLocalRecord(tab));
-  const providerResult = await createGroupPlanWithFallback(promptTabs, settings, localTabs);
-  const plan = normalizeGroupPlan(providerResult.plan, groupableTabs, settings);
-
-  return {
-    canApply: plan.groups.length > 0,
-    reason: plan.groups.length > 0 ? "ready" : "no-groups",
-    settings,
-    tabs,
-    groupableTabs,
-    skipped,
-    plan,
-    providerResult
-  };
 }
 
 async function collectPageHints(tabs, settings) {
@@ -243,7 +258,6 @@ async function collectPageHints(tabs, settings) {
     return hintsByTabId;
   }
 
-  const usedOrigins = new Set();
   for (const tab of tabs) {
     if (!Number.isInteger(tab.id)) {
       continue;
@@ -259,7 +273,6 @@ async function collectPageHints(tabs, settings) {
     if (!hasPermission) {
       continue;
     }
-    usedOrigins.add(origin);
 
     try {
       const results = await chrome.scripting.executeScript({
@@ -278,14 +291,22 @@ async function collectPageHints(tabs, settings) {
     }
   }
 
-  if (usedOrigins.size > 0) {
-    await chrome.permissions.remove({
-      permissions: ["scripting"],
-      origins: Array.from(usedOrigins)
-    }).catch(() => {});
-  }
-
   return hintsByTabId;
+}
+
+async function cleanupGrantedHintPermissions(grantedHintOrigins, settings) {
+  if (!chrome.permissions?.remove || grantedHintOrigins.length === 0) {
+    return;
+  }
+  const providerOrigins = new Set(getProviderOrigins(settings.provider));
+  const origins = grantedHintOrigins.filter((origin) => !providerOrigins.has(origin));
+  const request = {
+    permissions: ["scripting"]
+  };
+  if (origins.length > 0) {
+    request.origins = origins;
+  }
+  await chrome.permissions.remove(request).catch(() => {});
 }
 
 async function revalidatePlanBeforeApply(planResult, windowId) {
@@ -352,6 +373,15 @@ async function undoLastTidy(windowId) {
     }
   }
 
+  for (const move of undoPlan.tabMoves) {
+    await retryChromeTabMutation(() =>
+      chrome.tabs.move(move.tabId, {
+        windowId: snapshot.windowId,
+        index: move.index
+      })
+    );
+  }
+
   await clearLastTidySnapshot(snapshot.windowId);
 
   return {
@@ -398,33 +428,43 @@ async function getExistingGroupIds(windowId) {
 }
 
 async function saveLastTidySnapshot(snapshot) {
-  const snapshotsByWindow = await getStoredSnapshotsByWindow();
-  await chrome.storage.local.set({
-    [LAST_TIDY_SNAPSHOTS_BY_WINDOW_KEY]: {
-      ...snapshotsByWindow,
-      [String(snapshot.windowId)]: snapshot
-    }
+  await queueSnapshotMutation(async () => {
+    const snapshotsByWindow = await getStoredSnapshotsByWindow();
+    await chrome.storage.local.set({
+      [LAST_TIDY_SNAPSHOTS_BY_WINDOW_KEY]: {
+        ...snapshotsByWindow,
+        [String(snapshot.windowId)]: snapshot
+      }
+    });
+    await chrome.storage.local.remove(LAST_TIDY_SNAPSHOT_KEY);
   });
-  await chrome.storage.local.remove(LAST_TIDY_SNAPSHOT_KEY);
 }
 
 async function clearLastTidySnapshot(windowId) {
-  if (!Number.isInteger(windowId)) {
-    await chrome.storage.local.remove(LAST_TIDY_SNAPSHOTS_BY_WINDOW_KEY);
-    await chrome.storage.local.remove(LAST_TIDY_SNAPSHOT_KEY);
-    return;
-  }
+  await queueSnapshotMutation(async () => {
+    if (!Number.isInteger(windowId)) {
+      await chrome.storage.local.remove(LAST_TIDY_SNAPSHOTS_BY_WINDOW_KEY);
+      await chrome.storage.local.remove(LAST_TIDY_SNAPSHOT_KEY);
+      return;
+    }
 
-  const snapshotsByWindow = await getStoredSnapshotsByWindow();
-  const nextSnapshots = { ...snapshotsByWindow };
-  delete nextSnapshots[String(windowId)];
-  await chrome.storage.local.set({ [LAST_TIDY_SNAPSHOTS_BY_WINDOW_KEY]: nextSnapshots });
+    const snapshotsByWindow = await getStoredSnapshotsByWindow();
+    const nextSnapshots = { ...snapshotsByWindow };
+    delete nextSnapshots[String(windowId)];
+    await chrome.storage.local.set({ [LAST_TIDY_SNAPSHOTS_BY_WINDOW_KEY]: nextSnapshots });
 
-  const legacyStored = await chrome.storage.local.get(LAST_TIDY_SNAPSHOT_KEY);
-  const legacySnapshot = legacyStored[LAST_TIDY_SNAPSHOT_KEY];
-  if (!isUsableSnapshot(legacySnapshot) || legacySnapshot.windowId === windowId) {
-    await chrome.storage.local.remove(LAST_TIDY_SNAPSHOT_KEY);
-  }
+    const legacyStored = await chrome.storage.local.get(LAST_TIDY_SNAPSHOT_KEY);
+    const legacySnapshot = legacyStored[LAST_TIDY_SNAPSHOT_KEY];
+    if (!isUsableSnapshot(legacySnapshot) || legacySnapshot.windowId === windowId) {
+      await chrome.storage.local.remove(LAST_TIDY_SNAPSHOT_KEY);
+    }
+  });
+}
+
+async function queueSnapshotMutation(operation) {
+  const run = snapshotMutationQueue.then(operation, operation);
+  snapshotMutationQueue = run.catch(() => {});
+  return run;
 }
 
 async function getStoredSnapshotsByWindow() {

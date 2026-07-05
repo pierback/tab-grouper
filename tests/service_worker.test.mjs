@@ -39,7 +39,8 @@ function createFakeChrome({
     failNextGroupUpdate,
     queryCount: 0,
     scriptExecutions: [],
-    permissionRemovals: []
+    permissionRemovals: [],
+    tabMoves: []
   };
 
   const chrome = {
@@ -120,6 +121,24 @@ function createFakeChrome({
           findTab(tabId).groupId = -1;
         }
         cleanupEmptyGroups();
+      },
+      async move(tabIds, moveProperties) {
+        const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
+        for (const tabId of ids) {
+          const tab = findTab(tabId);
+          if (Number.isInteger(moveProperties.windowId)) {
+            tab.windowId = moveProperties.windowId;
+          }
+          const fromIndex = state.tabs.indexOf(tab);
+          state.tabs.splice(fromIndex, 1);
+          const targetTabs = state.tabs.filter((candidate) => candidate.windowId === tab.windowId);
+          const targetIndex = Math.max(0, Math.min(moveProperties.index, targetTabs.length));
+          const beforeTab = targetTabs[targetIndex];
+          const insertIndex = beforeTab ? state.tabs.indexOf(beforeTab) : findWindowAppendIndex(tab.windowId);
+          state.tabs.splice(insertIndex, 0, tab);
+          state.tabMoves.push({ tabId, ...moveProperties });
+          updateTabIndexes();
+        }
       }
     },
     tabGroups: {
@@ -163,6 +182,26 @@ function createFakeChrome({
       if (!state.tabs.some((tab) => tab.groupId === groupId)) {
         state.groups.delete(groupId);
       }
+    }
+  }
+
+  function findWindowAppendIndex(windowId) {
+    let index = state.tabs.length;
+    for (let candidateIndex = state.tabs.length - 1; candidateIndex >= 0; candidateIndex -= 1) {
+      if (state.tabs[candidateIndex].windowId === windowId) {
+        index = candidateIndex + 1;
+        break;
+      }
+    }
+    return index;
+  }
+
+  function updateTabIndexes() {
+    const nextIndexByWindow = new Map();
+    for (const tab of state.tabs) {
+      const nextIndex = nextIndexByWindow.get(tab.windowId) || 0;
+      tab.index = nextIndex;
+      nextIndexByWindow.set(tab.windowId, nextIndex + 1);
     }
   }
 
@@ -314,7 +353,11 @@ function getStoredSnapshot(chrome, windowId) {
   });
   await importServiceWorker(chrome);
 
-  const preview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 7 });
+  const preview = await sendRuntimeMessage(chrome, {
+    type: "PREVIEW_CURRENT_WINDOW",
+    windowId: 7,
+    grantedHintOrigins: ["https://github.com/*"]
+  });
   assert.equal(preview.ok, true);
   assert.equal(preview.usedFallback, true);
   assert.equal(chrome.__state.scriptExecutions.length, 2);
@@ -324,6 +367,31 @@ function getStoredSnapshot(chrome, windowId) {
   );
   assert.deepEqual(chrome.__state.permissionRemovals, [
     { permissions: ["scripting"], origins: ["https://github.com/*"] }
+  ]);
+}
+
+{
+  const chrome = createFakeChrome({
+    tabs: [
+      { id: 1, title: "Only Tab", url: "https://example.com/one", windowId: 8, index: 0 }
+    ],
+    storage: {
+      provider: "local-codex-cli",
+      includePageHints: true
+    }
+  });
+  await importServiceWorker(chrome);
+
+  const preview = await sendRuntimeMessage(chrome, {
+    type: "PREVIEW_CURRENT_WINDOW",
+    windowId: 8,
+    grantedHintOrigins: ["https://example.com/*"]
+  });
+  assert.equal(preview.ok, true);
+  assert.equal(preview.message, "Not enough tabs to group.");
+  assert.equal(chrome.__state.scriptExecutions.length, 0);
+  assert.deepEqual(chrome.__state.permissionRemovals, [
+    { permissions: ["scripting"], origins: ["https://example.com/*"] }
   ]);
 }
 
@@ -367,12 +435,19 @@ function getStoredSnapshot(chrome, windowId) {
   });
   await importServiceWorker(chrome);
 
-  const preview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 3 });
+  const preview = await sendRuntimeMessage(chrome, {
+    type: "PREVIEW_CURRENT_WINDOW",
+    windowId: 3,
+    grantedHintOrigins: ["https://api.openai.com/*", "https://developer.chrome.com/*"]
+  });
   assert.equal(preview.ok, true);
   assert.equal(preview.usedFallback, true);
   assert.equal(preview.providerErrorKind, "missing-host-permission");
   assert.match(preview.message, /API host permission is missing/);
   assert.deepEqual(preview.groups, [{ name: "Dev Docs", color: "blue", count: 2 }]);
+  assert.deepEqual(chrome.__state.permissionRemovals, [
+    { permissions: ["scripting"], origins: ["https://developer.chrome.com/*"] }
+  ]);
 }
 
 {
@@ -430,6 +505,53 @@ function getStoredSnapshot(chrome, windowId) {
   assert.equal(chrome.__state.tabs[0].groupId, 200);
   assert.equal(chrome.__state.tabs[1].groupId, -1);
   assert.equal(getStoredSnapshot(chrome, 7), undefined);
+}
+
+{
+  const chrome = createFakeChrome({
+    tabs: [
+      { id: 1, title: "Codex Issue", url: "https://github.com/openai/codex/issues/1", windowId: 10, index: 0 },
+      { id: 2, title: "Codex PR", url: "https://github.com/openai/codex/pull/2", windowId: 10, index: 1 },
+      { id: 3, title: "Other", url: "https://example.com", windowId: 10, index: 2 }
+    ]
+  });
+  await importServiceWorker(chrome);
+
+  const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 10 });
+  assert.equal(tidy.ok, true);
+  chrome.__state.tabs.splice(0, 3, chrome.__state.tabs[2], chrome.__state.tabs[0], chrome.__state.tabs[1]);
+  chrome.__state.tabs.forEach((tab, index) => {
+    tab.index = index;
+  });
+
+  const undo = await sendRuntimeMessage(chrome, { type: "UNDO_LAST_TIDY", windowId: 10 });
+  assert.equal(undo.ok, true);
+  assert.deepEqual(chrome.__state.tabMoves, [
+    { tabId: 1, windowId: 10, index: 0 },
+    { tabId: 2, windowId: 10, index: 1 }
+  ]);
+  assert.deepEqual(chrome.__state.tabs.map((tab) => tab.id), [1, 2, 3]);
+}
+
+{
+  const chrome = createFakeChrome({
+    tabs: [
+      { id: 1, title: "Window 11 Issue", url: "https://github.com/openai/codex/issues/1", windowId: 11, index: 0 },
+      { id: 2, title: "Window 11 PR", url: "https://github.com/openai/codex/pull/2", windowId: 11, index: 1 },
+      { id: 3, title: "Window 12 Issue", url: "https://github.com/openai/codex/issues/3", windowId: 12, index: 0 },
+      { id: 4, title: "Window 12 PR", url: "https://github.com/openai/codex/pull/4", windowId: 12, index: 1 }
+    ]
+  });
+  await importServiceWorker(chrome);
+
+  const [left, right] = await Promise.all([
+    sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 11 }),
+    sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 12 })
+  ]);
+  assert.equal(left.ok, true);
+  assert.equal(right.ok, true);
+  assert.ok(getStoredSnapshot(chrome, 11));
+  assert.ok(getStoredSnapshot(chrome, 12));
 }
 
 console.log("Service worker tests passed.");

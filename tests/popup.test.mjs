@@ -154,13 +154,21 @@ function flushAsyncWork() {
   assert.equal(elements["undo-button"].hidden, false);
 
   await elements["tidy-button"].dispatch("click");
-  assert.deepEqual(chrome.__state.messages.at(-1), { type: "TIDY_CURRENT_WINDOW", windowId: 42 });
+  assert.deepEqual(chrome.__state.messages.at(-1), {
+    type: "TIDY_CURRENT_WINDOW",
+    windowId: 42,
+    grantedHintOrigins: []
+  });
   assert.equal(elements["tidy-button"].disabled, false);
   assert.equal(elements.result.children.length, 2);
   assert.equal(elements["undo-button"].hidden, false);
 
   await elements["preview-button"].dispatch("click");
-  assert.deepEqual(chrome.__state.messages.at(-1), { type: "PREVIEW_CURRENT_WINDOW", windowId: 42 });
+  assert.deepEqual(chrome.__state.messages.at(-1), {
+    type: "PREVIEW_CURRENT_WINDOW",
+    windowId: 42,
+    grantedHintOrigins: []
+  });
 
   await elements["undo-button"].dispatch("click");
   assert.deepEqual(chrome.__state.messages.at(-1), { type: "UNDO_LAST_TIDY", windowId: 42 });
@@ -181,7 +189,9 @@ function flushAsyncWork() {
     tabs: [
       { id: 1, windowId: 43, url: "https://example.com/a" },
       { id: 2, windowId: 43, url: "https://example.com/b" },
-      { id: 3, windowId: 43, url: "chrome://settings" }
+      { id: 3, windowId: 43, url: "chrome://settings" },
+      { id: 4, windowId: 43, url: "https://pinned.example/a", pinned: true },
+      { id: 5, windowId: 43, url: "https://grouped.example/a", groupId: 9 }
     ]
   });
 
@@ -189,7 +199,11 @@ function flushAsyncWork() {
   assert.deepEqual(chrome.__state.permissionRequests, [
     { permissions: ["scripting"], origins: ["https://example.com/*"] }
   ]);
-  assert.deepEqual(chrome.__state.messages.at(-1), { type: "TIDY_CURRENT_WINDOW", windowId: 43 });
+  assert.deepEqual(chrome.__state.messages.at(-1), {
+    type: "TIDY_CURRENT_WINDOW",
+    windowId: 43,
+    grantedHintOrigins: ["https://example.com/*"]
+  });
 }
 
 console.log("Popup tests passed.");

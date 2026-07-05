@@ -1,5 +1,7 @@
 import { getProviderLabel } from "./lib/provider_metadata.js";
 import { pageHintPermissionPatternsForTabs, shouldUsePageHints } from "./lib/page_hints.js";
+import { normalizeSettings } from "./lib/settings.js";
+import { isGroupableTab } from "./lib/tabs.js";
 
 const tidyButton = document.querySelector("#tidy-button");
 const result = document.querySelector("#result");
@@ -21,10 +23,11 @@ tidyButton.addEventListener("click", async () => {
 
   try {
     const currentWindow = await chrome.windows.getCurrent();
-    await preparePageHintPermissions(currentWindow.id);
+    const grantedHintOrigins = await preparePageHintPermissions(currentWindow.id);
     const response = await chrome.runtime.sendMessage({
       type: "TIDY_CURRENT_WINDOW",
-      windowId: currentWindow.id
+      windowId: currentWindow.id,
+      grantedHintOrigins
     });
 
     if (!response?.ok) {
@@ -47,10 +50,11 @@ previewButton.addEventListener("click", async () => {
 
   try {
     const currentWindow = await chrome.windows.getCurrent();
-    await preparePageHintPermissions(currentWindow.id);
+    const grantedHintOrigins = await preparePageHintPermissions(currentWindow.id);
     const response = await chrome.runtime.sendMessage({
       type: "PREVIEW_CURRENT_WINDOW",
-      windowId: currentWindow.id
+      windowId: currentWindow.id,
+      grantedHintOrigins
     });
 
     if (!response?.ok) {
@@ -89,14 +93,16 @@ undoButton.addEventListener("click", async () => {
 
 async function preparePageHintPermissions(windowId) {
   const status = await chrome.runtime.sendMessage({ type: "GET_STATUS", windowId });
-  if (!shouldUsePageHints(status?.settings) || !chrome.permissions?.request) {
-    return;
+  const settings = normalizeSettings(status?.settings);
+  if (!shouldUsePageHints(settings) || !chrome.permissions?.request) {
+    return [];
   }
 
   const tabs = await chrome.tabs.query({ windowId });
-  const origins = pageHintPermissionPatternsForTabs(tabs);
+  const groupableTabs = tabs.filter((tab) => isGroupableTab(tab, settings));
+  const origins = pageHintPermissionPatternsForTabs(groupableTabs);
   if (origins.length === 0) {
-    return;
+    return [];
   }
 
   const granted = await chrome.permissions.request({
@@ -105,7 +111,9 @@ async function preparePageHintPermissions(windowId) {
   });
   if (!granted) {
     renderMessage("Tidying current window without page hints...");
+    return [];
   }
+  return origins;
 }
 
 async function initPopup() {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { checkNativeCliStatus, createPlanWithNativeCli, NATIVE_HOST_NAME } from "../lib/native_cli_provider.js";
 
-function createChrome({ hasPermission = true, nativeResponse, disconnectError = null } = {}) {
+function createChrome({ hasPermission = true, nativeResponse, disconnectError = null, postMessageError = null } = {}) {
   const state = {
     sentMessages: [],
     hostNames: []
@@ -32,6 +32,9 @@ function createChrome({ hasPermission = true, nativeResponse, disconnectError = 
             }
           },
           postMessage(message) {
+            if (postMessageError) {
+              throw new Error(postMessageError);
+            }
             state.sentMessages.push(message);
             setTimeout(() => {
               if (disconnectError) {
@@ -60,6 +63,12 @@ const tabs = [
 ];
 
 {
+  const timeoutDelays = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    timeoutDelays.push(delay);
+    return originalSetTimeout(callback, delay, ...args);
+  };
   const chrome = createChrome({
     nativeResponse(message) {
       return {
@@ -76,16 +85,23 @@ const tabs = [
   });
   globalThis.chrome = chrome;
 
-  const plan = await createPlanWithNativeCli(tabs, {
-    minimumGroupSize: 2,
-    includeFullUrls: false,
-    includePageHints: false
-  }, "codex");
+  try {
+    const plan = await createPlanWithNativeCli(tabs, {
+      minimumGroupSize: 2,
+      includeFullUrls: false,
+      includePageHints: false,
+      providerRequestTimeoutMs: 4000
+    }, "codex");
 
-  assert.deepEqual(plan.groups, [{ name: "Codex GitHub", color: "blue", tabIds: [1, 2] }]);
-  assert.deepEqual(chrome.__state.hostNames, [NATIVE_HOST_NAME]);
-  assert.equal(chrome.__state.sentMessages[0].provider, "codex");
-  assert.equal(chrome.__state.sentMessages[0].tabs[0].url, undefined);
+    assert.deepEqual(plan.groups, [{ name: "Codex GitHub", color: "blue", tabIds: [1, 2] }]);
+    assert.deepEqual(chrome.__state.hostNames, [NATIVE_HOST_NAME]);
+    assert.equal(chrome.__state.sentMessages[0].provider, "codex");
+    assert.equal(chrome.__state.sentMessages[0].timeoutMs, 4000);
+    assert.equal(chrome.__state.sentMessages[0].tabs[0].url, undefined);
+    assert.ok(timeoutDelays.includes(6500));
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
 }
 
 {
@@ -125,6 +141,36 @@ const tabs = [
     (error) => error.providerErrorKind === "missing-native-permission"
   );
   assert.deepEqual(chrome.__state.hostNames, []);
+}
+
+{
+  let scheduledTimeout = false;
+  let clearedTimeout = false;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    scheduledTimeout = true;
+    return originalSetTimeout(callback, delay, ...args);
+  };
+  globalThis.clearTimeout = (timeoutId) => {
+    clearedTimeout = true;
+    return originalClearTimeout(timeoutId);
+  };
+  const chrome = createChrome({
+    postMessageError: "Message is too large."
+  });
+  globalThis.chrome = chrome;
+  try {
+    await assert.rejects(
+      createPlanWithNativeCli(tabs, { minimumGroupSize: 2 }, "codex"),
+      (error) => error.providerErrorKind === "native-host-protocol-error"
+    );
+    assert.equal(scheduledTimeout, true);
+    assert.equal(clearedTimeout, true);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
 }
 
 {
