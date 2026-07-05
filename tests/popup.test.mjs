@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 
-async function importPopup({ currentWindowId = 42, undoAvailable = true, settings = { provider: "heuristic" }, tabs = null } = {}) {
+async function importPopup({
+  currentWindowId = 42,
+  undoAvailable = true,
+  settings = { provider: "heuristic" },
+  tabs = null,
+  tidyResponse = null,
+  previewResponse = null
+} = {}) {
   const elements = createFakeElements();
-  const chrome = createFakeChrome({ currentWindowId, undoAvailable, settings, tabs });
+  const chrome = createFakeChrome({ currentWindowId, undoAvailable, settings, tabs, tidyResponse, previewResponse });
   globalThis.chrome = chrome;
   globalThis.document = createFakeDocument(elements);
 
@@ -64,7 +71,7 @@ function createFakeDocument(elements) {
   };
 }
 
-function createFakeChrome({ currentWindowId, undoAvailable, settings, tabs }) {
+function createFakeChrome({ currentWindowId, undoAvailable, settings, tabs, tidyResponse, previewResponse }) {
   const state = {
     messages: [],
     tabQueries: [],
@@ -95,7 +102,7 @@ function createFakeChrome({ currentWindowId, undoAvailable, settings, tabs }) {
           };
         }
         if (message.type === "TIDY_CURRENT_WINDOW") {
-          return {
+          return tidyResponse || {
             ok: true,
             undoAvailable: true,
             groups: [{ name: "Codex GitHub", color: "blue", count: 2 }],
@@ -103,7 +110,7 @@ function createFakeChrome({ currentWindowId, undoAvailable, settings, tabs }) {
           };
         }
         if (message.type === "PREVIEW_CURRENT_WINDOW") {
-          return {
+          return previewResponse || {
             ok: true,
             undoAvailable: false,
             groups: [{ name: "Dev Docs", color: "green", count: 2 }],
@@ -204,6 +211,44 @@ function flushAsyncWork() {
     windowId: 43,
     grantedHintOrigins: ["https://example.com/*"]
   });
+}
+
+{
+  const { elements } = await importPopup({
+    previewResponse: {
+      ok: true,
+      undoAvailable: false,
+      groups: [{ name: "<Unsafe Group>", color: "green", count: 2 }],
+      message: "Would create 1 group.",
+      provider: "heuristic",
+      requestedProvider: "local-codex-cli",
+      usedFallback: true,
+      providerError: "Bridge <failed> & stopped"
+    }
+  });
+
+  await elements["preview-button"].dispatch("click");
+  assert.match(elements.result.children[1].innerHTML, /Requested provider: <strong>Local Codex CLI<\/strong>/);
+  assert.match(elements.result.children[1].innerHTML, /Actual provider: <strong>Local heuristic<\/strong>/);
+  assert.match(elements.result.children[1].innerHTML, /Provider error: Bridge &lt;failed&gt; &amp; stopped/);
+  assert.match(elements.result.children[2].children[0].innerHTML, /&lt;Unsafe Group&gt;/);
+}
+
+{
+  const { elements } = await importPopup({
+    previewResponse: {
+      ok: true,
+      undoAvailable: false,
+      groups: [{ name: "Dev Docs", color: "green", count: 2 }],
+      message: "Would create 1 group.",
+      provider: "openai",
+      usedFallback: false,
+      providerError: ""
+    }
+  });
+
+  await elements["preview-button"].dispatch("click");
+  assert.equal(elements.result.children[1].innerHTML, "AI provider: <strong>OpenAI API</strong>.");
 }
 
 console.log("Popup tests passed.");
