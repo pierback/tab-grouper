@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import {
+  extractSuperficialPageHintParts,
+  normalizePageContext,
   normalizePageHintParts,
   pageHintPermissionPattern,
   pageHintPermissionPatternsForTabs,
@@ -27,6 +29,9 @@ assert.deepEqual(
 
 const hint = normalizePageHintParts({
   title: "  Product   Roadmap  ",
+  canonicalUrl: "https://example.com/roadmap",
+  siteName: "Example",
+  path: "/roadmap",
   metaDescription: "A planning page for Q3 execution.",
   ogTitle: "Roadmap OG",
   headings: ["North Star", "Milestones", "Risks", "Ignored"]
@@ -34,7 +39,7 @@ const hint = normalizePageHintParts({
 
 assert.equal(
   hint,
-  "Title: Product Roadmap / Description: A planning page for Q3 execution. / Open Graph: Roadmap OG / Headings: North Star | Milestones | Risks"
+  "Title: Product Roadmap / Canonical: https://example.com/roadmap / Site: Example / Path: /roadmap / Description: A planning page for Q3 execution. / Open Graph: Roadmap OG / Headings: North Star | Milestones | Risks | Ignored"
 );
 
 const longHint = normalizePageHintParts({
@@ -43,5 +48,87 @@ const longHint = normalizePageHintParts({
 });
 assert.equal(longHint.length <= 600, true);
 assert.equal(/[^\x20-\x7e]/.test(normalizePageHintParts({ title: "A\u0000B\nC" })), false);
+
+assert.deepEqual(
+  normalizePageContext({
+    canonicalUrl: "https://example.com/docs",
+    path: "/docs",
+    siteName: "Example Docs",
+    metaDescription: "Reference material.",
+    ogTitle: "Docs",
+    ogDescription: "Full API docs.",
+    headings: ["Overview", "Install", "Use", "Debug", "Deploy", "Ignored"],
+    visibleText: "This is visible page text."
+  }),
+  {
+    canonicalUrl: "https://example.com/docs",
+    path: "/docs",
+    siteName: "Example Docs",
+    metaDescription: "Reference material.",
+    ogTitle: "Docs",
+    ogDescription: "Full API docs.",
+    headings: ["Overview", "Install", "Use", "Debug", "Deploy"],
+    visibleText: "This is visible page text.",
+    source: "page",
+    truncated: true
+  }
+);
+
+const oversizedContext = normalizePageContext({
+  canonicalUrl: "c".repeat(300),
+  path: "p".repeat(300),
+  siteName: "s".repeat(300),
+  metaDescription: "m".repeat(300),
+  ogTitle: "t".repeat(300),
+  ogDescription: "o".repeat(300),
+  headings: Array.from({ length: 5 }, () => "h".repeat(160)),
+  visibleText: "v".repeat(600)
+});
+assert.equal(new TextEncoder().encode(JSON.stringify(oversizedContext)).length <= 2000, true);
+assert.equal(oversizedContext.visibleText, "");
+assert.deepEqual(oversizedContext.headings, []);
+assert.equal(oversizedContext.truncated, true);
+
+const originalDocument = globalThis.document;
+const originalLocation = globalThis.location;
+globalThis.location = { pathname: "/products/roadmap" };
+globalThis.document = {
+  title: " Roadmap\n ",
+  body: { innerText: "Body fallback text" },
+  querySelector(selector) {
+    const matches = {
+      'link[rel="canonical" i]': { getAttribute: () => "https://example.com/products/roadmap" },
+      'meta[property="og:site_name" i]': { getAttribute: () => "Example" },
+      'meta[name="description" i]': { getAttribute: () => "A planning page." },
+      'meta[property="og:title" i]': { getAttribute: () => "Roadmap OG" },
+      'meta[property="og:description" i]': { getAttribute: () => "Planning details." },
+      main: { innerText: "Main\nvisible\ttext" }
+    };
+    return matches[selector] || null;
+  },
+  querySelectorAll() {
+    return [
+      { textContent: "H1" },
+      { textContent: "H2" },
+      { textContent: "H3" },
+      { textContent: "H4" },
+      { textContent: "H5" },
+      { textContent: "H6" }
+    ];
+  }
+};
+assert.deepEqual(extractSuperficialPageHintParts(), {
+  title: "Roadmap",
+  canonicalUrl: "https://example.com/products/roadmap",
+  path: "/products/roadmap",
+  siteName: "Example",
+  metaDescription: "A planning page.",
+  ogTitle: "Roadmap OG",
+  ogDescription: "Planning details.",
+  headings: ["H1", "H2", "H3", "H4", "H5"],
+  visibleText: "Main visible text"
+});
+globalThis.document = originalDocument;
+globalThis.location = originalLocation;
 
 console.log("Page hint tests passed.");

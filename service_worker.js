@@ -2,6 +2,7 @@ import { createGroupPlanWithFallback } from "./lib/providers.js";
 import { getProviderOrigins } from "./lib/provider_metadata.js";
 import {
   extractSuperficialPageHintParts,
+  normalizePageContext,
   normalizePageHintParts,
   pageHintPermissionPattern,
   shouldUsePageHints
@@ -241,7 +242,8 @@ async function buildCurrentWindowPlan(windowId, grantedHintOrigins = []) {
     const pageHintsByTabId = await collectPageHints(groupableTabs, settings);
     const promptTabs = groupableTabs.map((tab) => tabToPromptRecord({
       ...tab,
-      pageHint: pageHintsByTabId.get(tab.id) || ""
+      pageHint: pageHintsByTabId.get(tab.id)?.pageHint || "",
+      context: pageHintsByTabId.get(tab.id)?.context
     }, settings));
     const localTabs = groupableTabs.map((tab) => tabToLocalRecord(tab));
     const providerResult = await createGroupPlanWithFallback(promptTabs, settings, localTabs);
@@ -268,38 +270,50 @@ async function collectPageHints(tabs, settings) {
     return hintsByTabId;
   }
 
-  for (const tab of tabs) {
-    if (!Number.isInteger(tab.id)) {
-      continue;
-    }
-    const origin = pageHintPermissionPattern(tab.url);
-    if (!origin) {
-      continue;
-    }
-    const hasPermission = await chrome.permissions.contains({
-      permissions: ["scripting"],
-      origins: [origin]
-    }).catch(() => false);
-    if (!hasPermission) {
-      continue;
-    }
+  let nextTabIndex = 0;
+  const workerCount = Math.min(8, tabs.length);
 
-    try {
-      const results = await chrome.scripting.executeScript({
-        target: {
-          tabId: tab.id,
-          allFrames: false
-        },
-        func: extractSuperficialPageHintParts
-      });
-      const hint = normalizePageHintParts(results?.[0]?.result);
-      if (hint) {
-        hintsByTabId.set(tab.id, hint);
+  async function collectNextHint() {
+    while (nextTabIndex < tabs.length) {
+      const tab = tabs[nextTabIndex];
+      nextTabIndex += 1;
+
+      if (!Number.isInteger(tab.id)) {
+        continue;
       }
-    } catch {
-      // Pages such as browser internals, PDFs, and restricted frames can reject injection.
+      const origin = pageHintPermissionPattern(tab.url);
+      if (!origin) {
+        continue;
+      }
+      const hasPermission = await chrome.permissions.contains({
+        permissions: ["scripting"],
+        origins: [origin]
+      }).catch(() => false);
+      if (!hasPermission) {
+        continue;
+      }
+
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: {
+            tabId: tab.id,
+            allFrames: false
+          },
+          func: extractSuperficialPageHintParts
+        });
+        const parts = results?.[0]?.result;
+        const pageHint = normalizePageHintParts(parts);
+        const context = normalizePageContext(parts);
+        if (pageHint || context) {
+          hintsByTabId.set(tab.id, { pageHint, context });
+        }
+      } catch {
+        // Pages such as browser internals, PDFs, and restricted frames can reject injection.
+      }
     }
   }
+
+  await Promise.all(Array.from({ length: workerCount }, () => collectNextHint()));
 
   return hintsByTabId;
 }

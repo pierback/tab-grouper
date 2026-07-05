@@ -26,7 +26,7 @@ assert.deepEqual(
     { id: 7, title: "Issue", url: "https://github.com/openai/codex/issues/1" },
     baseSettings
   ),
-  { id: 7, title: "Issue", domain: "github.com", url: undefined, pageHint: undefined }
+  { id: 7, title: "Issue", domain: "github.com", url: undefined, pageHint: undefined, context: undefined }
 );
 
 assert.deepEqual(
@@ -34,15 +34,28 @@ assert.deepEqual(
     { id: 7, title: "Issue", url: "https://github.com/openai/codex/issues/1" },
     { ...baseSettings, includeFullUrls: true }
   ),
-  { id: 7, title: "Issue", domain: "github.com", url: "https://github.com/openai/codex/issues/1", pageHint: undefined }
+  { id: 7, title: "Issue", domain: "github.com", url: "https://github.com/openai/codex/issues/1", pageHint: undefined, context: undefined }
 );
+
+const context = {
+  canonicalUrl: "https://github.com/openai/codex/issues/1",
+  path: "/openai/codex/issues/1",
+  siteName: "GitHub",
+  metaDescription: "Issue discussion.",
+  ogTitle: "Issue",
+  ogDescription: "Issue discussion.",
+  headings: ["Bug"],
+  visibleText: "A reproducible issue.",
+  source: "page",
+  truncated: false
+};
 
 assert.deepEqual(
   tabToPromptRecord(
-    { id: 7, title: "Issue", url: "https://github.com/openai/codex/issues/1", pageHint: "Title: Codex" },
+    { id: 7, title: "Issue", url: "https://github.com/openai/codex/issues/1", pageHint: "Title: Codex", context },
     { ...baseSettings, includePageHints: true }
   ),
-  { id: 7, title: "Issue", domain: "github.com", url: undefined, pageHint: "Title: Codex" }
+  { id: 7, title: "Issue", domain: "github.com", url: undefined, pageHint: "Title: Codex", context }
 );
 
 console.log("Tab helper tests passed.");
