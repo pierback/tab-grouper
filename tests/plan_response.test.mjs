@@ -20,7 +20,8 @@ const readyPlan = {
     groups: [
       { name: "Codex GitHub", color: "blue", tabIds: [1, 2] },
       { name: "Dev Docs", color: "red", tabIds: [3, 4, 5] }
-    ]
+    ],
+    assignments: []
   },
   providerResult: {
     provider: "heuristic",
@@ -57,6 +58,7 @@ assert.deepEqual(createPlanResponse(readyPlan, { preview: true }), {
     { name: "Codex GitHub", color: "blue", count: 2 },
     { name: "Dev Docs", color: "red", count: 3 }
   ],
+  assignments: [],
   skipped: readyPlan.skipped,
   provider: "heuristic",
   requestedProvider: undefined,
@@ -109,6 +111,30 @@ assert.equal(
     providerResult: { provider: "heuristic", usedFallback: false, providerError: "", providerErrorKind: "" }
   }),
   "Not enough tabs to group."
+);
+
+assert.equal(
+  buildPlanMessage({
+    canApply: true,
+    reason: "ready",
+    skipped: { pinned: 0, alreadyGrouped: 0, missingUrl: 0 },
+    plan: {
+      groups: [],
+      assignments: [{ groupId: 7, tabIds: [1] }]
+    },
+    providerResult: { provider: "openai", usedFallback: false, providerError: "", providerErrorKind: "" }
+  }, { preview: true }),
+  "Would add 1 tab to existing groups."
+);
+
+assert.equal(
+  buildTidySuccessMessage(
+    [],
+    { pinned: 0, alreadyGrouped: 0, missingUrl: 0 },
+    { usedFallback: false },
+    [{ groupId: 7, count: 3 }]
+  ),
+  "Added 3 tabs to existing groups."
 );
 
 assert.equal(

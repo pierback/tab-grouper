@@ -106,6 +106,32 @@ func TestParsePlanTextNormalizesUnsafeGroups(t *testing.T) {
 	}
 }
 
+func TestParsePlanTextNormalizesAssignments(t *testing.T) {
+	request := validRequest()
+	request.Tabs = append(request.Tabs,
+		Tab{ID: 3, Title: "Docs", Domain: "developer.chrome.com"},
+		Tab{ID: 4, Title: "More Docs", Domain: "developer.chrome.com"},
+	)
+	request.ExistingGroups = []ExistingGroup{
+		{ID: 7, Title: "Docs", Color: "blue", TabIDs: []int{9}},
+		{ID: 8, Title: "Planning", Color: "green", TabIDs: []int{10}},
+	}
+
+	plan, err := ParsePlanText(`{"groups":[{"name":"Docs","color":"blue","tabIds":[1,2]}],"assignments":[{"groupId":7,"tabIds":[3,3,999]},{"groupId":404,"tabIds":[4]},{"groupId":8,"tabIds":[2,4]}]}`, request)
+	if err != nil {
+		t.Fatalf("ParsePlanText failed: %v", err)
+	}
+	if len(plan.Groups) != 1 || len(plan.Assignments) != 2 {
+		t.Fatalf("unexpected plan: %#v", plan)
+	}
+	if !slices.Equal(plan.Assignments[0].TabIDs, []int{3}) || plan.Assignments[0].GroupID != 7 {
+		t.Fatalf("unexpected first assignment: %#v", plan.Assignments[0])
+	}
+	if !slices.Equal(plan.Assignments[1].TabIDs, []int{4}) || plan.Assignments[1].GroupID != 8 {
+		t.Fatalf("unexpected second assignment: %#v", plan.Assignments[1])
+	}
+}
+
 func TestParsePlanTextRejectsNonJSON(t *testing.T) {
 	_, err := ParsePlanText("not json", validRequest())
 	assertBridgeErrorKind(t, err, "malformed-output")

@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const planSchemaJSON = `{"type":"object","properties":{"groups":{"type":"array","maxItems":12,"items":{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":32},"color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"]},"tabIds":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"integer"}}},"required":["name","color","tabIds"],"additionalProperties":false}}},"required":["groups"],"additionalProperties":false}`
+const planSchemaJSON = `{"type":"object","properties":{"groups":{"type":"array","maxItems":12,"items":{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":32},"color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"]},"tabIds":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"integer"}}},"required":["name","color","tabIds"],"additionalProperties":false}},"assignments":{"type":"array","maxItems":50,"items":{"type":"object","properties":{"groupId":{"type":"integer"},"tabIds":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"integer"}}},"required":["groupId","tabIds"],"additionalProperties":false}}},"required":["groups"],"additionalProperties":false}`
 const CLIStatusTimeout = 3 * time.Second
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
@@ -374,6 +374,10 @@ func normalizePlan(plan Plan, request Request) Plan {
 	for _, tab := range request.Tabs {
 		availableIDs[tab.ID] = true
 	}
+	existingGroupIDs := map[int]bool{}
+	for _, group := range request.ExistingGroups {
+		existingGroupIDs[group.ID] = true
+	}
 
 	usedIDs := map[int]bool{}
 	groups := []PlanGroup{}
@@ -407,7 +411,40 @@ func normalizePlan(plan Plan, request Request) Plan {
 		})
 	}
 
-	return Plan{Groups: groups}
+	assignments := []PlanAssignment{}
+	for _, assignment := range plan.Assignments {
+		if len(assignments) >= 50 {
+			break
+		}
+		if !existingGroupIDs[assignment.GroupID] {
+			continue
+		}
+
+		assignmentSeen := map[int]bool{}
+		tabIDs := []int{}
+		for _, tabID := range assignment.TabIDs {
+			if !availableIDs[tabID] || usedIDs[tabID] || assignmentSeen[tabID] {
+				continue
+			}
+			assignmentSeen[tabID] = true
+			tabIDs = append(tabIDs, tabID)
+		}
+
+		if len(tabIDs) == 0 {
+			continue
+		}
+
+		for _, tabID := range tabIDs {
+			usedIDs[tabID] = true
+		}
+
+		assignments = append(assignments, PlanAssignment{
+			GroupID: assignment.GroupID,
+			TabIDs:  tabIDs,
+		})
+	}
+
+	return Plan{Groups: groups, Assignments: assignments}
 }
 
 func normalizePlanName(value string, fallback string) string {

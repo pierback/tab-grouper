@@ -16,6 +16,7 @@ const (
 	ResponseType      = "TAB_GROUP_PLAN_RESPONSE"
 	MaxMessageBytes   = 1024 * 1024
 	MaxTabs           = 200
+	MaxExistingGroups = 50
 )
 
 type Tab struct {
@@ -41,25 +42,39 @@ type TabContext struct {
 }
 
 type Request struct {
-	Version          int    `json:"version"`
-	Type             string `json:"type"`
-	RequestID        string `json:"requestId"`
-	Provider         string `json:"provider,omitempty"`
-	TimeoutMS        int    `json:"timeoutMs,omitempty"`
-	MinimumGroupSize int    `json:"minimumGroupSize,omitempty"`
-	IncludeFullURLs  bool   `json:"includeFullUrls,omitempty"`
-	IncludePageHints bool   `json:"includePageHints,omitempty"`
-	Tabs             []Tab  `json:"tabs,omitempty"`
+	Version          int             `json:"version"`
+	Type             string          `json:"type"`
+	RequestID        string          `json:"requestId"`
+	Provider         string          `json:"provider,omitempty"`
+	TimeoutMS        int             `json:"timeoutMs,omitempty"`
+	MinimumGroupSize int             `json:"minimumGroupSize,omitempty"`
+	IncludeFullURLs  bool            `json:"includeFullUrls,omitempty"`
+	IncludePageHints bool            `json:"includePageHints,omitempty"`
+	ExistingGroups   []ExistingGroup `json:"existingGroups,omitempty"`
+	Tabs             []Tab           `json:"tabs,omitempty"`
+}
+
+type ExistingGroup struct {
+	ID     int    `json:"id"`
+	Title  string `json:"title"`
+	Color  string `json:"color"`
+	TabIDs []int  `json:"tabIds"`
 }
 
 type Plan struct {
-	Groups []PlanGroup `json:"groups"`
+	Groups      []PlanGroup      `json:"groups"`
+	Assignments []PlanAssignment `json:"assignments,omitempty"`
 }
 
 type PlanGroup struct {
 	Name   string `json:"name"`
 	Color  string `json:"color"`
 	TabIDs []int  `json:"tabIds"`
+}
+
+type PlanAssignment struct {
+	GroupID int   `json:"groupId"`
+	TabIDs  []int `json:"tabIds"`
 }
 
 type Response struct {
@@ -166,6 +181,17 @@ func ValidateRequest(request Request) error {
 			return err
 		}
 	}
+	if len(request.ExistingGroups) > MaxExistingGroups {
+		return errors.New("invalid existing group count")
+	}
+	for _, group := range request.ExistingGroups {
+		if len(group.Title) > 64 {
+			return errors.New("existing group title is too large")
+		}
+		if group.Color != "" && !isAllowedTabGroupColor(group.Color) {
+			return errors.New("invalid existing group color")
+		}
+	}
 	return nil
 }
 
@@ -201,6 +227,15 @@ func validateTabContext(context *TabContext) error {
 		return errors.New("tab context is too large")
 	}
 	return nil
+}
+
+func isAllowedTabGroupColor(color string) bool {
+	for _, allowed := range []string{"grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"} {
+		if color == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func StatusResponse(request Request, status Status) Response {

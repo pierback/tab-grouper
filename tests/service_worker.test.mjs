@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { LAST_TIDY_SNAPSHOTS_BY_WINDOW_KEY } from "../lib/undo.js";
 
+const originalLanguageModel = globalThis.LanguageModel;
+
 async function importServiceWorker(chrome) {
   globalThis.chrome = chrome;
   await import(`../service_worker.js?test=${Date.now()}-${Math.random()}`);
@@ -505,6 +507,52 @@ function getStoredSnapshot(chrome, windowId) {
 }
 
 {
+  let promptText = "";
+  globalThis.LanguageModel = {
+    async availability() {
+      return "available";
+    },
+    async create() {
+      return {
+        async prompt(text) {
+          promptText = text;
+          return JSON.stringify({
+            groups: [],
+            assignments: [{ groupId: 7, tabIds: [2] }]
+          });
+        }
+      };
+    }
+  };
+
+  const chrome = createFakeChrome({
+    tabs: [
+      { id: 1, title: "Existing Codex Issue", url: "https://github.com/openai/codex/issues/1", windowId: 8, index: 0, groupId: 7 },
+      { id: 2, title: "New Codex Issue", url: "https://github.com/openai/codex/issues/2", windowId: 8, index: 1, groupId: -1 }
+    ],
+    groups: [{ id: 7, title: "Codex Issues", color: "blue", collapsed: false, windowId: 8 }],
+    storage: { provider: "chrome-ai" }
+  });
+  await importServiceWorker(chrome);
+
+  const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 8 });
+  assert.equal(tidy.ok, true);
+  assert.equal(tidy.groupedCount, 1);
+  assert.deepEqual(tidy.groups, []);
+  assert.deepEqual(tidy.assignments, [{ groupId: 7, count: 1 }]);
+  assert.match(tidy.message, /Added 1 tab to existing groups/);
+  assert.match(promptText, /"existingGroups"/);
+  assert.equal(chrome.__state.tabs.find((tab) => tab.id === 2).groupId, 7);
+  assert.deepEqual(getStoredSnapshot(chrome, 8).changedTabIds, [2]);
+
+  const undo = await sendRuntimeMessage(chrome, { type: "UNDO_LAST_TIDY", windowId: 8 });
+  assert.equal(undo.ok, true);
+  assert.equal(chrome.__state.tabs.find((tab) => tab.id === 1).groupId, 7);
+  assert.equal(chrome.__state.tabs.find((tab) => tab.id === 2).groupId, -1);
+  globalThis.LanguageModel = originalLanguageModel;
+}
+
+{
   const chrome = createFakeChrome({
     tabs: [
       { id: 1, title: "Codex Issue", url: "https://github.com/openai/codex/issues/1", windowId: 7, index: 0 },
@@ -581,5 +629,7 @@ function getStoredSnapshot(chrome, windowId) {
   assert.ok(getStoredSnapshot(chrome, 11));
   assert.ok(getStoredSnapshot(chrome, 12));
 }
+
+globalThis.LanguageModel = originalLanguageModel;
 
 console.log("Service worker tests passed.");
