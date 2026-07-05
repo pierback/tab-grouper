@@ -80,12 +80,17 @@ const tabs = [
     minimumGroupSize: 2,
     includeFullUrls: false,
     includePageHints: false
-  }, "codex");
+  }, "codex", [
+    { id: 7, title: "Codex", color: "purple", tabIds: [9] }
+  ]);
 
   assert.deepEqual(plan.groups, [{ name: "Codex GitHub", color: "blue", tabIds: [1, 2] }]);
   assert.deepEqual(chrome.__state.hostNames, [NATIVE_HOST_NAME]);
   assert.equal(chrome.__state.sentMessages[0].provider, "codex");
   assert.equal(chrome.__state.sentMessages[0].tabs[0].url, undefined);
+  assert.deepEqual(chrome.__state.sentMessages[0].existingGroups, [
+    { id: 7, title: "Codex", color: "purple", tabIds: [9] }
+  ]);
 }
 
 {

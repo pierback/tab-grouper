@@ -94,13 +94,18 @@ async function tidyCurrentWindow(windowId) {
 
   const preTidyGroups = await chrome.tabGroups.query({ windowId });
   const appliedGroups = [];
-  const changedTabIds = planResult.plan.groups.flatMap((group) => group.tabIds);
+  const appliedAssignments = [];
+  const changedTabIds = [
+    ...planResult.plan.groups.flatMap((group) => group.tabIds),
+    ...planResult.plan.assignments.flatMap((assignment) => assignment.tabIds)
+  ];
   const baseSnapshot = createTidySnapshot({
     windowId,
     tabs: planResult.tabs,
     groups: preTidyGroups,
     changedTabIds,
     appliedGroups,
+    appliedAssignments,
     settings: planResult.settings
   });
   await saveLastTidySnapshot({
@@ -136,16 +141,36 @@ async function tidyCurrentWindow(windowId) {
       );
     }
 
+    for (const assignment of planResult.plan.assignments) {
+      await retryChromeTabMutation(() => chrome.tabs.group({
+        tabIds: assignment.tabIds,
+        groupId: assignment.groupId
+      }));
+      appliedAssignments.push({
+        groupId: assignment.groupId,
+        tabIds: assignment.tabIds,
+        count: assignment.tabIds.length
+      });
+      await saveLastTidySnapshot({
+        ...baseSnapshot,
+        state: "applying",
+        appliedGroups,
+        appliedAssignments
+      });
+    }
+
     await saveLastTidySnapshot({
       ...baseSnapshot,
       state: "applied",
-      appliedGroups
+      appliedGroups,
+      appliedAssignments
     });
   } catch (error) {
     await saveLastTidySnapshot({
       ...baseSnapshot,
       state: "failed",
       appliedGroups,
+      appliedAssignments,
       error: error.message || String(error)
     });
     return {
@@ -158,8 +183,13 @@ async function tidyCurrentWindow(windowId) {
 
   return {
     ok: true,
-    groupedCount: appliedGroups.reduce((sum, group) => sum + group.count, 0),
+    groupedCount: appliedGroups.reduce((sum, group) => sum + group.count, 0) +
+      appliedAssignments.reduce((sum, assignment) => sum + assignment.count, 0),
     groups: appliedGroups,
+    assignments: appliedAssignments.map((assignment) => ({
+      groupId: assignment.groupId,
+      count: assignment.count
+    })),
     skipped: planResult.skipped,
     provider: planResult.providerResult.provider,
     requestedProvider: planResult.providerResult.requestedProvider,
@@ -167,7 +197,7 @@ async function tidyCurrentWindow(windowId) {
     providerError: planResult.providerResult.providerError,
     providerErrorKind: planResult.providerResult.providerErrorKind,
     undoAvailable: true,
-    message: buildTidySuccessMessage(appliedGroups, planResult.skipped, planResult.providerResult)
+    message: buildTidySuccessMessage(appliedGroups, planResult.skipped, planResult.providerResult, appliedAssignments)
   };
 }
 
@@ -197,8 +227,12 @@ async function buildCurrentWindowPlan(windowId) {
   const tabs = await chrome.tabs.query({ windowId });
   const skipped = countSkipReasons(tabs, settings);
   const groupableTabs = tabs.filter((tab) => isGroupableTab(tab, settings));
+  const existingGroups = settings.provider === "heuristic"
+    ? []
+    : await getExistingGroupsForPrompt(windowId, tabs);
 
-  if (groupableTabs.length < Number(settings.minimumGroupSize || 2)) {
+  const canAssignToExistingGroups = settings.provider !== "heuristic" && groupableTabs.length > 0 && existingGroups.length > 0;
+  if (groupableTabs.length < Number(settings.minimumGroupSize || 2) && !canAssignToExistingGroups) {
     return {
       canApply: false,
       reason: "too-few-tabs",
@@ -206,7 +240,7 @@ async function buildCurrentWindowPlan(windowId) {
       tabs,
       groupableTabs,
       skipped,
-      plan: { groups: [] },
+      plan: { groups: [], assignments: [] },
       providerResult: {
         provider: settings.provider,
         usedFallback: false,
@@ -222,12 +256,13 @@ async function buildCurrentWindowPlan(windowId) {
     pageHint: pageHintsByTabId.get(tab.id) || ""
   }, settings));
   const localTabs = groupableTabs.map((tab) => tabToLocalRecord(tab));
-  const providerResult = await createGroupPlanWithFallback(promptTabs, settings, localTabs);
-  const plan = normalizeGroupPlan(providerResult.plan, groupableTabs, settings);
+  const providerResult = await createGroupPlanWithFallback(promptTabs, settings, localTabs, existingGroups);
+  const plan = normalizeGroupPlan(providerResult.plan, groupableTabs, settings, existingGroups);
+  const hasChanges = plan.groups.length > 0 || plan.assignments.length > 0;
 
   return {
-    canApply: plan.groups.length > 0,
-    reason: plan.groups.length > 0 ? "ready" : "no-groups",
+    canApply: hasChanges,
+    reason: hasChanges ? "ready" : "no-groups",
     settings,
     tabs,
     groupableTabs,
@@ -292,17 +327,44 @@ async function revalidatePlanBeforeApply(planResult, windowId) {
   const tabs = await chrome.tabs.query({ windowId });
   const skipped = countSkipReasons(tabs, planResult.settings);
   const groupableTabs = tabs.filter((tab) => isGroupableTab(tab, planResult.settings));
-  const plan = normalizeGroupPlan(planResult.plan, groupableTabs, planResult.settings);
+  const existingGroups = planResult.settings.provider === "heuristic"
+    ? []
+    : await getExistingGroupsForPrompt(windowId, tabs);
+  const plan = normalizeGroupPlan(planResult.plan, groupableTabs, planResult.settings, existingGroups);
+  const hasChanges = plan.groups.length > 0 || plan.assignments.length > 0;
 
   return {
     ...planResult,
-    canApply: plan.groups.length > 0,
-    reason: plan.groups.length > 0 ? "ready" : "stale-plan",
+    canApply: hasChanges,
+    reason: hasChanges ? "ready" : "stale-plan",
     tabs,
     groupableTabs,
     skipped,
     plan
   };
+}
+
+async function getExistingGroupsForPrompt(windowId, tabs) {
+  const groups = await chrome.tabGroups.query({ windowId });
+  const tabIdsByGroupId = new Map();
+  for (const tab of tabs) {
+    if (!Number.isInteger(tab.id) || !Number.isInteger(tab.groupId) || tab.groupId === -1) {
+      continue;
+    }
+    if (!tabIdsByGroupId.has(tab.groupId)) {
+      tabIdsByGroupId.set(tab.groupId, []);
+    }
+    tabIdsByGroupId.get(tab.groupId).push(tab.id);
+  }
+
+  return groups
+    .filter((group) => Number.isInteger(group.id))
+    .map((group) => ({
+      id: group.id,
+      title: group.title || "",
+      color: group.color || "",
+      tabIds: tabIdsByGroupId.get(group.id) || []
+    }));
 }
 
 async function undoLastTidy(windowId) {

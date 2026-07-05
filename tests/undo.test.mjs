@@ -95,6 +95,31 @@ assert.deepEqual(
   }
 );
 
+const assignmentSnapshot = createTidySnapshot({
+  windowId: 10,
+  tabs: [
+    { id: 1, groupId: -1, windowId: 10, index: 0 },
+    { id: 2, groupId: -1, windowId: 10, index: 1 }
+  ],
+  groups: [{ id: 7, title: "Original", color: "purple", collapsed: false, windowId: 10 }],
+  changedTabIds: [1, 2],
+  appliedGroups: [],
+  appliedAssignments: [{ groupId: 7, tabIds: [1, 2], count: 2 }],
+  settings: { keepExistingGroups: true }
+});
+
+assert.deepEqual(
+  createUndoPlan(assignmentSnapshot, [
+    { id: 1, groupId: 7 },
+    { id: 2, groupId: 200 }
+  ]),
+  {
+    canUndo: true,
+    tabIdsToUngroup: [1],
+    originalGroups: []
+  }
+);
+
 assert.deepEqual(createUndoPlan(null, []), {
   canUndo: false,
   tabIdsToUngroup: [],

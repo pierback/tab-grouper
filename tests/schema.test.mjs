@@ -23,6 +23,7 @@ const plan = normalizeGroupPlan(
 assert.deepEqual(plan.groups, [
   { name: "Work Docs", color: "blue", tabIds: [1, 2] }
 ]);
+assert.deepEqual(plan.assignments, []);
 
 const singletonFirstPlan = normalizeGroupPlan(
   {
@@ -38,6 +39,44 @@ const singletonFirstPlan = normalizeGroupPlan(
 assert.deepEqual(singletonFirstPlan.groups, [
   { name: "Use later", color: "cyan", tabIds: [3, 4] }
 ]);
+
+const assignmentPlan = normalizeGroupPlan(
+  {
+    groups: [
+      { name: "New", color: "green", tabIds: [1, 2] }
+    ],
+    assignments: [
+      { groupId: 7, tabIds: [3, 3, 999] },
+      { groupId: 8, tabIds: [4] },
+      { groupId: 404, tabIds: [4] },
+      { groupId: 7, tabIds: [2, 4] }
+    ]
+  },
+  availableTabs,
+  { minimumGroupSize: 2 },
+  [{ id: 7 }, { id: 8 }]
+);
+
+assert.deepEqual(assignmentPlan, {
+  groups: [{ name: "New", color: "green", tabIds: [1, 2] }],
+  assignments: [
+    { groupId: 7, tabIds: [3] },
+    { groupId: 8, tabIds: [4] }
+  ]
+});
+
+assert.deepEqual(
+  normalizeGroupPlan(
+    {
+      groups: [],
+      assignments: [{ groupId: 7, tabIds: [1, 2] }]
+    },
+    [{ id: 1, groupId: 7 }, { id: 2, groupId: -1 }],
+    { minimumGroupSize: 2 },
+    [{ id: 7 }]
+  ).assignments,
+  [{ groupId: 7, tabIds: [2] }]
+);
 
 assert.equal(normalizeGroupName("", "Fallback"), "Fallback");
 assert.equal(normalizeGroupName("a".repeat(40)).length, 32);
