@@ -34,6 +34,7 @@ Grouping rules:
 - Prefer adding tabs to a fitting existing group over creating a near-duplicate group.
 - Create new groups only for clear tasks with at least %d tabs.
 - Assignments may add one or more currently ungrouped input tabs to an existing group.
+- Return an empty assignments array when no tabs should be added to existing groups.
 - Omit unrelated, ambiguous, or singleton tabs that do not fit an existing group.
 - Do not duplicate a tab ID across groups.
 - Group names must be short noun phrases like "Codex Issues", "Berlin Trip", or "Q3 Planning".
@@ -58,5 +59,5 @@ Input JSON:
 Return exactly:
 {"groups":[{"name":"Short Name","color":"blue","tabIds":[1,2]}],"assignments":[{"groupId":3,"tabIds":[7,8]}]}
 
-The assignments field is optional.`, request.MinimumGroupSize, string(payload)), nil
+Return empty arrays for groups or assignments when there are no entries.`, request.MinimumGroupSize, string(payload)), nil
 }

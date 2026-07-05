@@ -183,6 +183,7 @@ const userPrompt = openAIRequestBody.input[1].content[0].text;
 assert.match(systemPrompt, /existingGroups are current Chrome tab groups/);
 assert.match(systemPrompt, /prefer assignments to a fitting existing group/i);
 assert.match(systemPrompt, /\{"assignments":\[\{"groupId":3,"tabIds":\[7,8\]\}\]\}/);
+assert.deepEqual(openAIRequestBody.text.format.schema.required, ["groups", "assignments"]);
 assert.match(systemPrompt, /intent or task first/);
 assert.match(systemPrompt, /short concrete noun phrases/);
 assert.match(systemPrompt, /never generic labels/);
