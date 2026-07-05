@@ -19,11 +19,25 @@ const (
 )
 
 type Tab struct {
-	ID       int    `json:"id"`
-	Title    string `json:"title"`
-	Domain   string `json:"domain"`
-	URL      string `json:"url,omitempty"`
-	PageHint string `json:"pageHint,omitempty"`
+	ID       int         `json:"id"`
+	Title    string      `json:"title"`
+	Domain   string      `json:"domain"`
+	URL      string      `json:"url,omitempty"`
+	PageHint string      `json:"pageHint,omitempty"`
+	Context  *TabContext `json:"context,omitempty"`
+}
+
+type TabContext struct {
+	CanonicalURL    string   `json:"canonicalUrl"`
+	Path            string   `json:"path"`
+	SiteName        string   `json:"siteName"`
+	MetaDescription string   `json:"metaDescription"`
+	OGTitle         string   `json:"ogTitle"`
+	OGDescription   string   `json:"ogDescription"`
+	Headings        []string `json:"headings"`
+	VisibleText     string   `json:"visibleText"`
+	Source          string   `json:"source"`
+	Truncated       bool     `json:"truncated"`
 }
 
 type Request struct {
@@ -148,6 +162,43 @@ func ValidateRequest(request Request) error {
 		if len(tab.Title) > 300 || len(tab.Domain) > 120 || len(tab.URL) > 1000 || len(tab.PageHint) > 1000 {
 			return errors.New("tab context is too large")
 		}
+		if err := validateTabContext(tab.Context); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateTabContext(context *TabContext) error {
+	if context == nil {
+		return nil
+	}
+	if len(context.CanonicalURL) > 300 ||
+		len(context.Path) > 300 ||
+		len(context.SiteName) > 300 ||
+		len(context.MetaDescription) > 300 ||
+		len(context.OGTitle) > 300 ||
+		len(context.OGDescription) > 300 ||
+		len(context.VisibleText) > 600 {
+		return errors.New("tab context is too large")
+	}
+	if context.Source != "page" {
+		return errors.New("invalid tab context source")
+	}
+	if len(context.Headings) > 5 {
+		return errors.New("tab context is too large")
+	}
+	for _, heading := range context.Headings {
+		if len(heading) > 160 {
+			return errors.New("tab context is too large")
+		}
+	}
+	payload, err := json.Marshal(context)
+	if err != nil {
+		return err
+	}
+	if len(payload) > 2000 {
+		return errors.New("tab context is too large")
 	}
 	return nil
 }

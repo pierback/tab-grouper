@@ -55,7 +55,25 @@ function createChrome({ hasPermission = true, nativeResponse, disconnectError = 
 }
 
 const tabs = [
-  { id: 1, title: "Issue", domain: "github.com", url: "https://github.com/openai/codex/issues/1" },
+  {
+    id: 1,
+    title: "Issue",
+    domain: "github.com",
+    url: "https://github.com/openai/codex/issues/1",
+    pageHint: "Title: Issue",
+    context: {
+      canonicalUrl: "https://github.com/openai/codex/issues/1",
+      path: "/openai/codex/issues/1",
+      siteName: "GitHub",
+      metaDescription: "Issue discussion.",
+      ogTitle: "Issue",
+      ogDescription: "Issue discussion.",
+      headings: ["Bug"],
+      visibleText: "A reproducible issue.",
+      source: "page",
+      truncated: false
+    }
+  },
   { id: 2, title: "PR", domain: "github.com", url: "https://github.com/openai/codex/pull/2" }
 ];
 
@@ -86,6 +104,35 @@ const tabs = [
   assert.deepEqual(chrome.__state.hostNames, [NATIVE_HOST_NAME]);
   assert.equal(chrome.__state.sentMessages[0].provider, "codex");
   assert.equal(chrome.__state.sentMessages[0].tabs[0].url, undefined);
+  assert.equal(chrome.__state.sentMessages[0].tabs[0].pageHint, undefined);
+  assert.equal(chrome.__state.sentMessages[0].tabs[0].context, undefined);
+}
+
+{
+  const chrome = createChrome({
+    nativeResponse(message) {
+      return {
+        version: 1,
+        type: "TAB_GROUP_PLAN_RESPONSE",
+        requestId: message.requestId,
+        ok: true,
+        provider: "local-codex-cli",
+        plan: {
+          groups: [{ name: "Codex GitHub", color: "blue", tabIds: [1, 2] }]
+        }
+      };
+    }
+  });
+  globalThis.chrome = chrome;
+
+  await createPlanWithNativeCli(tabs, {
+    minimumGroupSize: 2,
+    includeFullUrls: false,
+    includePageHints: true
+  }, "codex");
+
+  assert.equal(chrome.__state.sentMessages[0].tabs[0].pageHint, "Title: Issue");
+  assert.deepEqual(chrome.__state.sentMessages[0].tabs[0].context, tabs[0].context);
 }
 
 {
