@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tab Grouper Options</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="options-shell">
+      <header class="page-header">
+        <h1>Tab Grouper</h1>
+      </header>
+
+      <form id="settings-form" class="settings-form">
+        <section class="section">
+          <h2>Provider</h2>
+          <label class="field">
+            <span>Grouping engine</span>
+            <select id="provider" name="provider">
+              <option value="heuristic">Local heuristic</option>
+              <option value="local-codex-cli">Local Codex CLI</option>
+              <option value="local-claude-cli">Local Claude Code CLI</option>
+              <option value="chrome-ai">Chrome built-in AI</option>
+              <option value="openai">OpenAI API</option>
+              <option value="anthropic">Anthropic API</option>
+            </select>
+          </label>
+          <div class="data-scope" aria-live="polite">
+            <div>
+              <span class="label">Data mode</span>
+              <strong id="data-mode">-</strong>
+            </div>
+            <p id="data-summary"></p>
+          </div>
+        </section>
+
+        <section class="section provider-section" data-provider-section="openai">
+          <h2>OpenAI</h2>
+          <label class="field">
+            <span>API key</span>
+            <input id="openaiApiKey" name="openaiApiKey" type="password" autocomplete="off" placeholder="sk-...">
+          </label>
+          <label class="field">
+            <span>Model</span>
+            <input id="openaiModel" name="openaiModel" type="text" placeholder="gpt-5.4-mini">
+          </label>
+        </section>
+
+        <section class="section provider-section" data-provider-section="anthropic">
+          <h2>Anthropic</h2>
+          <label class="field">
+            <span>API key</span>
+            <input id="anthropicApiKey" name="anthropicApiKey" type="password" autocomplete="off" placeholder="sk-ant-...">
+          </label>
+          <label class="field">
+            <span>Model</span>
+            <input id="anthropicModel" name="anthropicModel" type="text" placeholder="claude-sonnet-4-6-20260217">
+          </label>
+        </section>
+
+        <section class="section provider-section" data-provider-section="local-cli">
+          <h2>Local CLI Bridge</h2>
+          <p class="helper-text">Check the native host and pinned CLI path without running a model request.</p>
+          <button id="test-native-bridge" class="secondary-button" type="button">Test bridge</button>
+          <span id="native-bridge-status" class="save-status" aria-live="polite"></span>
+        </section>
+
+        <section class="section">
+          <h2>Behavior</h2>
+          <label class="checkbox-field">
+            <input id="ignorePinnedTabs" name="ignorePinnedTabs" type="checkbox">
+            <span>Ignore pinned tabs</span>
+          </label>
+          <label class="checkbox-field">
+            <input id="keepExistingGroups" name="keepExistingGroups" type="checkbox">
+            <span>Leave existing groups untouched</span>
+          </label>
+          <label class="checkbox-field">
+            <input id="collapseGroups" name="collapseGroups" type="checkbox">
+            <span>Collapse groups after tidying</span>
+          </label>
+          <label class="checkbox-field">
+            <input id="includeFullUrls" name="includeFullUrls" type="checkbox">
+            <span>Send full URLs to AI providers</span>
+          </label>
+          <label class="checkbox-field">
+            <input id="includePageHints" name="includePageHints" type="checkbox">
+            <span>Use superficial page hints</span>
+          </label>
+          <label class="field compact-field">
+            <span>Minimum group size</span>
+            <input id="minimumGroupSize" name="minimumGroupSize" type="number" min="2" max="10" step="1">
+          </label>
+        </section>
+
+        <footer class="form-footer">
+          <button class="primary-button" type="submit">Save</button>
+          <span id="save-status" class="save-status" aria-live="polite"></span>
+        </footer>
+      </form>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

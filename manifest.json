@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Tab Grouper",
+  "version": "0.1.0",
+  "description": "Tidy open tabs into logical groups with local heuristics or an AI provider.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "tabGroups",
+    "windows"
+  ],
+  "optional_permissions": [
+    "nativeMessaging",
+    "scripting"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*",
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Tidy tabs"
+  },
+  "background": {
+    "service_worker": "service_worker.js",
+    "type": "module"
+  },
+  "options_page": "options.html"
+}

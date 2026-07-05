@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tab Grouper</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body class="popup">
+    <main class="popup-shell">
+      <header class="popup-header">
+        <h1>Tab Grouper</h1>
+        <button id="open-options" class="icon-button text-icon-button" type="button" title="Open options" aria-label="Open options">Options</button>
+      </header>
+
+      <section class="status-panel">
+        <div class="status-row">
+          <span class="label">Provider</span>
+          <strong id="provider-label">Loading</strong>
+        </div>
+        <div class="status-row">
+          <span class="label">Window</span>
+          <strong id="tab-count">-</strong>
+        </div>
+      </section>
+
+      <button id="tidy-button" class="primary-button" type="button">Tidy tabs</button>
+      <button id="preview-button" class="secondary-button" type="button">Preview plan</button>
+      <button id="undo-button" class="secondary-button" type="button" hidden>Undo last tidy</button>
+
+      <section id="result" class="result" aria-live="polite"></section>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
