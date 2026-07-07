@@ -559,6 +559,105 @@ function getStoredSnapshot(chrome, windowId) {
 }
 
 {
+  let promptCount = 0;
+  globalThis.LanguageModel = {
+    async availability() {
+      return "available";
+    },
+    async create() {
+      return {
+        async prompt() {
+          promptCount += 1;
+          return JSON.stringify({
+            groups: [{ name: "Dev Docs", color: "blue", tabIds: [1, 2] }],
+            assignments: []
+          });
+        }
+      };
+    }
+  };
+
+  const chrome = createFakeChrome({
+    tabs: [
+      { id: 1, title: "OpenAI Docs", url: "https://developers.openai.com/api", windowId: 13, index: 0 },
+      { id: 2, title: "Chrome Extensions", url: "https://developer.chrome.com/docs/extensions", windowId: 13, index: 1 }
+    ],
+    storage: { provider: "chrome-ai" }
+  });
+  await importServiceWorker(chrome);
+
+  const preview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 13 });
+  assert.equal(preview.ok, true);
+
+  const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 13 });
+  assert.equal(tidy.ok, true);
+  assert.equal(promptCount, 1);
+
+  const undo = await sendRuntimeMessage(chrome, { type: "UNDO_LAST_TIDY", windowId: 13 });
+  assert.equal(undo.ok, true);
+  chrome.__state.tabs.push({
+    id: 3,
+    title: "Extensions API",
+    url: "https://developer.chrome.com/docs/extensions/reference",
+    windowId: 13,
+    index: 2,
+    pinned: false,
+    groupId: -1
+  });
+
+  const changedPreview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 13 });
+  assert.equal(changedPreview.ok, true);
+  assert.equal(promptCount, 2);
+  globalThis.LanguageModel = originalLanguageModel;
+}
+
+{
+  let promptCount = 0;
+  globalThis.LanguageModel = {
+    async availability() {
+      return "available";
+    },
+    async create() {
+      return {
+        async prompt() {
+          promptCount += 1;
+          return JSON.stringify({
+            groups: [{ name: "Dev Docs", color: "blue", tabIds: [1, 2] }],
+            assignments: []
+          });
+        }
+      };
+    }
+  };
+
+  const chrome = createFakeChrome({
+    tabs: [
+      { id: 1, title: "OpenAI Docs", url: "https://developers.openai.com/api", windowId: 14, index: 0 },
+      { id: 2, title: "Chrome Extensions", url: "https://developer.chrome.com/docs/extensions", windowId: 14, index: 1 }
+    ],
+    storage: { provider: "chrome-ai" }
+  });
+  await importServiceWorker(chrome);
+
+  const preview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 14 });
+  assert.equal(preview.ok, true);
+  chrome.__state.tabs.push({
+    id: 3,
+    title: "Extensions API",
+    url: "https://developer.chrome.com/docs/extensions/reference",
+    windowId: 14,
+    index: 2,
+    pinned: false,
+    groupId: -1
+  });
+
+  const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 14 });
+  assert.equal(tidy.ok, true);
+  assert.equal(promptCount, 2);
+  globalThis.LanguageModel = originalLanguageModel;
+}
+
+{
   const chrome = createFakeChrome({
     tabs: [
       { id: 1, title: "Codex Issue", url: "https://github.com/openai/codex/issues/1", windowId: 7, index: 0 },

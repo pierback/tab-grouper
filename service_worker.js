@@ -1,5 +1,6 @@
 import { createGroupPlanWithFallback } from "./lib/providers.js";
 import { getProviderOrigins } from "./lib/provider_metadata.js";
+import { getCachedPlan, invalidatePlanCache, setCachedPlan } from "./lib/plan_cache.js";
 import {
   extractSuperficialPageHintParts,
   normalizePageContext,
@@ -20,6 +21,7 @@ import {
 } from "./lib/undo.js";
 
 const activeTidiesByWindow = new Set();
+const planCache = new Map();
 let snapshotMutationQueue = Promise.resolve();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -190,6 +192,7 @@ async function tidyCurrentWindow(windowId, grantedHintOrigins = []) {
       appliedAssignments
     });
   } catch (error) {
+    invalidatePlanCache(planCache, windowId);
     await saveLastTidySnapshot({
       ...baseSnapshot,
       state: "failed",
@@ -205,6 +208,7 @@ async function tidyCurrentWindow(windowId, grantedHintOrigins = []) {
     };
   }
 
+  invalidatePlanCache(planCache, windowId);
   return {
     ok: true,
     groupedCount: appliedGroups.reduce((sum, group) => sum + group.count, 0) +
@@ -277,6 +281,28 @@ async function buildCurrentWindowPlan(windowId, grantedHintOrigins = []) {
       };
     }
 
+    const cacheKeyInput = createPlanCacheKeyInput({
+      windowId,
+      settings,
+      groupableTabs,
+      existingGroups
+    });
+    const cachedPlan = getCachedPlan(planCache, windowId, cacheKeyInput);
+    if (cachedPlan) {
+      const hasChanges = cachedPlan.plan.groups.length > 0 || cachedPlan.plan.assignments.length > 0;
+      return {
+        canApply: hasChanges,
+        reason: hasChanges ? "ready" : "no-groups",
+        settings,
+        tabs,
+        groupableTabs,
+        skipped,
+        existingGroups,
+        plan: cachedPlan.plan,
+        providerResult: cachedPlan.providerResult
+      };
+    }
+
     const pageHintsByTabId = await collectPageHints(groupableTabs, settings);
     const promptTabs = groupableTabs.map((tab) => tabToPromptRecord({
       ...tab,
@@ -287,6 +313,7 @@ async function buildCurrentWindowPlan(windowId, grantedHintOrigins = []) {
     const providerResult = await createGroupPlanWithFallback(promptTabs, settings, localTabs, existingGroups);
     const plan = normalizeGroupPlan(providerResult.plan, groupableTabs, settings, existingGroups);
     const hasChanges = plan.groups.length > 0 || plan.assignments.length > 0;
+    setCachedPlan(planCache, windowId, cacheKeyInput, { plan, providerResult });
 
     return {
       canApply: hasChanges,
@@ -302,6 +329,30 @@ async function buildCurrentWindowPlan(windowId, grantedHintOrigins = []) {
   } finally {
     await cleanupGrantedHintPermissions(grantedHintOrigins, settings);
   }
+}
+
+function createPlanCacheKeyInput({ windowId, settings, groupableTabs, existingGroups }) {
+  return {
+    windowId,
+    provider: settings.provider,
+    minimumGroupSize: settings.minimumGroupSize,
+    includeFullUrls: settings.includeFullUrls,
+    includePageHints: settings.includePageHints,
+    keepExistingGroups: settings.keepExistingGroups,
+    ignorePinnedTabs: settings.ignorePinnedTabs,
+    groupableTabs: groupableTabs.map((tab) => ({
+      id: tab.id,
+      title: tab.title,
+      url: tab.url,
+      index: tab.index
+    })),
+    existingGroups: existingGroups.map((group) => ({
+      id: group.id,
+      title: group.title,
+      color: group.color,
+      tabIds: [...group.tabIds]
+    }))
+  };
 }
 
 async function collectPageHints(tabs, settings) {
@@ -433,6 +484,7 @@ async function undoLastTidy(windowId) {
   const undoPlan = createUndoPlan(snapshot, currentTabs);
   if (!undoPlan.canUndo) {
     await clearLastTidySnapshot(snapshot.windowId);
+    invalidatePlanCache(planCache, snapshot.windowId);
     return {
       ok: true,
       undoneCount: 0,
@@ -475,6 +527,7 @@ async function undoLastTidy(windowId) {
   }
 
   await clearLastTidySnapshot(snapshot.windowId);
+  invalidatePlanCache(planCache, snapshot.windowId);
 
   return {
     ok: true,
