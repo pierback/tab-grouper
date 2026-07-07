@@ -35,7 +35,7 @@ func TestCLIRunnerBuildsCodexExecCommand(t *testing.T) {
 	if !slices.Equal(spec.Args[:3], []string{"--ask-for-approval", "never", "exec"}) {
 		t.Fatalf("codex approval args must precede exec subcommand: %#v", spec.Args)
 	}
-	for _, expected := range []string{"exec", "--sandbox", "read-only", "--ask-for-approval", "never", "--skip-git-repo-check", "--ephemeral", "--ignore-rules", "--json", "--output-schema", "--output-last-message", "-"} {
+	for _, expected := range []string{"exec", "--sandbox", "read-only", "--ask-for-approval", "never", "--skip-git-repo-check", "--ephemeral", "--ignore-rules", "--json", "-c", `model_reasoning_effort="low"`, "--output-schema", "--output-last-message", "-"} {
 		if !slices.Contains(spec.Args, expected) {
 			t.Fatalf("codex args missing %q: %#v", expected, spec.Args)
 		}
@@ -127,7 +127,7 @@ func TestCLIRunnerBuildsClaudePrintCommand(t *testing.T) {
 	if spec.Executable != "claude-test" {
 		t.Fatalf("unexpected executable: %s", spec.Executable)
 	}
-	for _, expected := range []string{"--print", "--input-format", "text", "--output-format", "--permission-mode", "dontAsk", "--tools", "", "--safe-mode", "--no-session-persistence", "--no-chrome", "--json-schema"} {
+	for _, expected := range []string{"--print", "--input-format", "text", "--output-format", "--permission-mode", "dontAsk", "--tools", "", "--effort", "low", "--safe-mode", "--no-session-persistence", "--no-chrome", "--json-schema"} {
 		if !slices.Contains(spec.Args, expected) {
 			t.Fatalf("claude args missing %q: %#v", expected, spec.Args)
 		}
