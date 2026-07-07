@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Chrome MV3 extension that tidies tabs into logical groups.",
   "scripts": {
-    "test": "node tests/schema.test.mjs && node tests/settings.test.mjs && node tests/tabs.test.mjs && node tests/page_hints.test.mjs && node tests/heuristics.test.mjs && node tests/undo.test.mjs && node tests/native_cli_provider.test.mjs && node tests/providers.test.mjs && node tests/provider_metadata.test.mjs && node tests/plan_response.test.mjs && node tests/service_worker.test.mjs && node tests/popup.test.mjs && node tests/options.test.mjs && node scripts/validate-extension.mjs && npm run test:go && npm run test:native-host-e2e",
+    "test": "node tests/schema.test.mjs && node tests/settings.test.mjs && node tests/tabs.test.mjs && node tests/page_hints.test.mjs && node tests/hint_cache.test.mjs && node tests/heuristics.test.mjs && node tests/undo.test.mjs && node tests/native_cli_provider.test.mjs && node tests/providers.test.mjs && node tests/provider_metadata.test.mjs && node tests/plan_response.test.mjs && node tests/service_worker.test.mjs && node tests/popup.test.mjs && node tests/options.test.mjs && node scripts/validate-extension.mjs && npm run test:go && npm run test:native-host-e2e",
     "test:go": "cd native-host && go test ./...",
     "test:native-host-e2e": "node scripts/test-native-host-e2e.mjs",
     "native:install": "node scripts/install-native-host.mjs",

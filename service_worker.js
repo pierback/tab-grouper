@@ -1,5 +1,6 @@
 import { createGroupPlanWithFallback } from "./lib/providers.js";
 import { getProviderOrigins } from "./lib/provider_metadata.js";
+import { getCachedHint, setCachedHint } from "./lib/hint_cache.js";
 import {
   extractSuperficialPageHintParts,
   normalizePageContext,
@@ -20,6 +21,7 @@ import {
 } from "./lib/undo.js";
 
 const activeTidiesByWindow = new Set();
+const hintCache = new Map();
 let snapshotMutationQueue = Promise.resolve();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -321,6 +323,12 @@ async function collectPageHints(tabs, settings) {
       if (!Number.isInteger(tab.id)) {
         continue;
       }
+      const cachedHint = getCachedHint(hintCache, tab);
+      if (cachedHint) {
+        // Cache hits skip permission checks because no page injection occurs.
+        hintsByTabId.set(tab.id, cachedHint);
+        continue;
+      }
       const origin = pageHintPermissionPattern(tab.url);
       if (!origin) {
         continue;
@@ -345,7 +353,9 @@ async function collectPageHints(tabs, settings) {
         const pageHint = normalizePageHintParts(parts);
         const context = normalizePageContext(parts);
         if (pageHint || context) {
-          hintsByTabId.set(tab.id, { pageHint, context });
+          const hint = { pageHint, context };
+          hintsByTabId.set(tab.id, hint);
+          setCachedHint(hintCache, tab, hint);
         }
       } catch {
         // Pages such as browser internals, PDFs, and restricted frames can reject injection.

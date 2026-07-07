@@ -1,0 +1,10 @@
+./cli_runner.go
+./config.go
+./host.go
+./main.go
+./prompt.go
+./protocol.go
+./runner.go
+./cli_runner_test.go
+./config_test.go
+./protocol_test.go

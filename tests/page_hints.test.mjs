@@ -91,8 +91,13 @@ assert.equal(oversizedContext.truncated, true);
 
 const originalDocument = globalThis.document;
 const originalLocation = globalThis.location;
+const originalRequestIdleCallback = globalThis.requestIdleCallback;
 globalThis.location = { pathname: "/products/roadmap" };
+globalThis.requestIdleCallback = (callback) => {
+  callback();
+};
 globalThis.document = {
+  readyState: "complete",
   title: " Roadmap\n ",
   body: { innerText: "Body fallback text" },
   querySelector(selector) {
@@ -117,7 +122,7 @@ globalThis.document = {
     ];
   }
 };
-assert.deepEqual(extractSuperficialPageHintParts(), {
+assert.deepEqual(await extractSuperficialPageHintParts(), {
   title: "Roadmap",
   canonicalUrl: "https://example.com/products/roadmap",
   path: "/products/roadmap",
@@ -128,7 +133,36 @@ assert.deepEqual(extractSuperficialPageHintParts(), {
   headings: ["H1", "H2", "H3", "H4", "H5"],
   visibleText: "Main visible text"
 });
+
+const delayedDocument = {
+  readyState: "loading",
+  title: "Loading",
+  body: { innerText: "Hydrated text" },
+  querySelector() {
+    return null;
+  },
+  querySelectorAll() {
+    return [];
+  }
+};
+globalThis.document = delayedDocument;
+setTimeout(() => {
+  delayedDocument.readyState = "complete";
+  delayedDocument.title = "Hydrated";
+}, 0);
+assert.deepEqual(await extractSuperficialPageHintParts(), {
+  title: "Hydrated",
+  canonicalUrl: "",
+  path: "/products/roadmap",
+  siteName: "",
+  metaDescription: "",
+  ogTitle: "",
+  ogDescription: "",
+  headings: [],
+  visibleText: "Hydrated text"
+});
 globalThis.document = originalDocument;
 globalThis.location = originalLocation;
+globalThis.requestIdleCallback = originalRequestIdleCallback;
 
 console.log("Page hint tests passed.");

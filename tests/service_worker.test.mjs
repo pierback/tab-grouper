@@ -367,7 +367,37 @@ function getStoredSnapshot(chrome, windowId) {
     chrome.__state.scriptExecutions.map((execution) => execution.target.tabId),
     [1, 2]
   );
+  const cachedPreview = await sendRuntimeMessage(chrome, {
+    type: "PREVIEW_CURRENT_WINDOW",
+    windowId: 7,
+    grantedHintOrigins: ["https://github.com/*"]
+  });
+  assert.equal(cachedPreview.ok, true);
+  assert.equal(chrome.__state.scriptExecutions.length, 2);
+
+  chrome.__state.tabs.find((tab) => tab.id === 1).title = "Codex Issue Updated";
+  const titleChangedPreview = await sendRuntimeMessage(chrome, {
+    type: "PREVIEW_CURRENT_WINDOW",
+    windowId: 7,
+    grantedHintOrigins: ["https://github.com/*"]
+  });
+  assert.equal(titleChangedPreview.ok, true);
+  assert.equal(chrome.__state.scriptExecutions.length, 3);
+  assert.equal(chrome.__state.scriptExecutions.at(-1).target.tabId, 1);
+
+  chrome.__state.tabs.find((tab) => tab.id === 2).url = "https://github.com/openai/codex/pull/3";
+  const urlChangedPreview = await sendRuntimeMessage(chrome, {
+    type: "PREVIEW_CURRENT_WINDOW",
+    windowId: 7,
+    grantedHintOrigins: ["https://github.com/*"]
+  });
+  assert.equal(urlChangedPreview.ok, true);
+  assert.equal(chrome.__state.scriptExecutions.length, 4);
+  assert.equal(chrome.__state.scriptExecutions.at(-1).target.tabId, 2);
   assert.deepEqual(chrome.__state.permissionRemovals, [
+    { permissions: ["scripting"], origins: ["https://github.com/*"] },
+    { permissions: ["scripting"], origins: ["https://github.com/*"] },
+    { permissions: ["scripting"], origins: ["https://github.com/*"] },
     { permissions: ["scripting"], origins: ["https://github.com/*"] }
   ]);
 }
