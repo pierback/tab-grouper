@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
 const MaxCLIOutputBytes = 1024 * 1024
+const CommandWaitDelay = 3 * time.Second
 
 type Runner interface {
 	Run(ctx context.Context, request Request, prompt string) (Plan, error)
@@ -64,6 +66,18 @@ func (ExecCommandRunner) Run(ctx context.Context, spec CommandSpec) (CommandResu
 	command := exec.CommandContext(ctx, spec.Executable, spec.Args...)
 	command.Dir = spec.Dir
 	command.Stdin = strings.NewReader(spec.Stdin)
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.Cancel = func() error {
+		if command.Process == nil {
+			return nil
+		}
+		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return nil
+		}
+		return err
+	}
+	command.WaitDelay = CommandWaitDelay
 	stdout := newCappedBuffer(MaxCLIOutputBytes)
 	stderr := newCappedBuffer(MaxCLIOutputBytes)
 	command.Stdout = &stdout

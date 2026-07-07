@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -88,8 +89,17 @@ func (runner CLIRunner) Run(ctx context.Context, request Request, prompt string)
 	if err != nil {
 		return Plan{}, classifyCLIError(request.Provider, result, err)
 	}
+	if request.Provider == "codex" && codexAttemptedToolUse(result.Stdout) {
+		return Plan{}, BridgeError{
+			Kind: "cli-blocked-tool-use",
+			Err:  errors.New("codex CLI attempted a disallowed action; its response was rejected"),
+		}
+	}
 
 	outputText := result.Stdout
+	if request.Provider == "codex" {
+		outputText = ""
+	}
 	if outputPath != "" {
 		bytes, readErr := readSmallFile(outputPath, MaxCLIOutputBytes)
 		if readErr != nil {
@@ -123,6 +133,7 @@ func (runner CLIRunner) buildCommandSpec(request Request, prompt string, tempDir
 				"--ephemeral",
 				"--ignore-rules",
 				"--color", "never",
+				"--json",
 				"--cd", tempDir,
 				"--output-schema", schemaPath,
 				"--output-last-message", outputPath,
@@ -234,6 +245,29 @@ func looksLikeAuthError(text string) bool {
 	} {
 		if strings.Contains(lower, needle) {
 			return true
+		}
+	}
+	return false
+}
+
+func codexAttemptedToolUse(output string) bool {
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	scanner.Buffer(make([]byte, 0, 64*1024), MaxCLIOutputBytes)
+	for scanner.Scan() {
+		var event struct {
+			Type string `json:"type"`
+			Item struct {
+				Type string `json:"type"`
+			} `json:"item"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			continue
+		}
+		switch event.Type {
+		case "item.started", "item.updated", "item.completed":
+			if event.Item.Type == "command_execution" || event.Item.Type == "file_change" {
+				return true
+			}
 		}
 	}
 	return false
