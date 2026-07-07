@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCLIRunnerBuildsCodexExecCommand(t *testing.T) {
@@ -34,7 +35,7 @@ func TestCLIRunnerBuildsCodexExecCommand(t *testing.T) {
 	if !slices.Equal(spec.Args[:3], []string{"--ask-for-approval", "never", "exec"}) {
 		t.Fatalf("codex approval args must precede exec subcommand: %#v", spec.Args)
 	}
-	for _, expected := range []string{"exec", "--sandbox", "read-only", "--ask-for-approval", "never", "--skip-git-repo-check", "--ephemeral", "--ignore-rules", "--output-schema", "--output-last-message", "-"} {
+	for _, expected := range []string{"exec", "--sandbox", "read-only", "--ask-for-approval", "never", "--skip-git-repo-check", "--ephemeral", "--ignore-rules", "--json", "--output-schema", "--output-last-message", "-"} {
 		if !slices.Contains(spec.Args, expected) {
 			t.Fatalf("codex args missing %q: %#v", expected, spec.Args)
 		}
@@ -44,6 +45,46 @@ func TestCLIRunnerBuildsCodexExecCommand(t *testing.T) {
 	}
 	if spec.Stdin != "group these tabs" {
 		t.Fatalf("prompt was not sent on stdin")
+	}
+}
+
+func TestCLIRunnerRejectsCodexToolUseEvent(t *testing.T) {
+	commands := &recordingCommandRunner{
+		result:           CommandResult{Stdout: `{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"pwd","aggregated_output":"","exit_code":null,"status":"in_progress"}}`},
+		writeCodexOutput: `{"groups":[{"name":"Should Reject","color":"blue","tabIds":[1,2]}]}`,
+	}
+	runner := CLIRunner{
+		Commands:         commands,
+		CodexExecutable:  "codex-test",
+		ClaudeExecutable: "claude-test",
+	}
+
+	_, err := runner.Run(context.Background(), validRequest(), "group these tabs")
+	assertBridgeErrorKind(t, err, "cli-blocked-tool-use")
+}
+
+func TestCLIRunnerParsesCodexPlanWithBenignJSONLEvents(t *testing.T) {
+	commands := &recordingCommandRunner{
+		result: CommandResult{Stdout: strings.Join([]string{
+			`{"type":"thread.started","thread_id":"thread-1"}`,
+			`{"type":"turn.started"}`,
+			`{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"{\"groups\":[{\"name\":\"Docs\",\"color\":\"green\",\"tabIds\":[1,2]}]}"}}`,
+			`{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}`,
+		}, "\n")},
+		writeCodexOutput: `{"groups":[{"name":"Docs","color":"green","tabIds":[1,2]}]}`,
+	}
+	runner := CLIRunner{
+		Commands:         commands,
+		CodexExecutable:  "codex-test",
+		ClaudeExecutable: "claude-test",
+	}
+
+	plan, err := runner.Run(context.Background(), validRequest(), "group these tabs")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if len(plan.Groups) != 1 || plan.Groups[0].Name != "Docs" {
+		t.Fatalf("unexpected plan: %#v", plan)
 	}
 }
 
@@ -188,6 +229,23 @@ func TestCappedBufferLimitsCapturedOutput(t *testing.T) {
 	}
 	if !buffer.Exceeded() {
 		t.Fatal("expected buffer to record exceeded limit")
+	}
+}
+
+func TestExecCommandRunnerTimeoutKillsDescendantHoldingStdout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+
+	_, err := (ExecCommandRunner{}).Run(ctx, CommandSpec{
+		Executable: "sh",
+		Args:       []string{"-c", "(sleep 3; echo late) & echo parent; sleep 10"},
+	})
+	elapsed := time.Since(start)
+
+	assertBridgeErrorKind(t, err, "cli-timeout")
+	if elapsed > time.Second {
+		t.Fatalf("Run took too long after timeout: %s", elapsed)
 	}
 }
 
