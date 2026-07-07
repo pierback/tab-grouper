@@ -63,6 +63,21 @@ func TestCLIRunnerRejectsCodexToolUseEvent(t *testing.T) {
 	assertBridgeErrorKind(t, err, "cli-blocked-tool-use")
 }
 
+func TestCLIRunnerRejectsCodexToolUseEventEvenOnNonzeroExit(t *testing.T) {
+	commands := &recordingCommandRunner{
+		result: CommandResult{Stdout: `{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"pwd","aggregated_output":"","exit_code":null,"status":"in_progress"}}`},
+		err:    errors.New("exit status 1"),
+	}
+	runner := CLIRunner{
+		Commands:         commands,
+		CodexExecutable:  "codex-test",
+		ClaudeExecutable: "claude-test",
+	}
+
+	_, err := runner.Run(context.Background(), validRequest(), "group these tabs")
+	assertBridgeErrorKind(t, err, "cli-blocked-tool-use")
+}
+
 func TestCLIRunnerParsesCodexPlanWithBenignJSONLEvents(t *testing.T) {
 	commands := &recordingCommandRunner{
 		result: CommandResult{Stdout: strings.Join([]string{

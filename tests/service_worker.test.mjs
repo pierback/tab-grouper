@@ -513,6 +513,38 @@ function getStoredSnapshot(chrome, windowId) {
 {
   const chrome = createFakeChrome({
     tabs: [
+      { id: 1, title: "OpenAI Docs", url: "https://developers.openai.com/api", windowId: 9, index: 0 },
+      { id: 2, title: "Chrome Extensions", url: "https://developer.chrome.com/docs/extensions", windowId: 9, index: 1 }
+    ],
+    storage: {
+      provider: "openai",
+      openaiApiKey: "sk-test",
+      openaiModel: "gpt-test",
+      allowHeuristicFallback: true
+    },
+    permissionContains: false
+  });
+  await importServiceWorker(chrome);
+
+  const preview = await sendRuntimeMessage(chrome, {
+    type: "PREVIEW_CURRENT_WINDOW",
+    windowId: 9,
+    grantedHintOrigins: ["https://api.openai.com/*", "https://developer.chrome.com/*"]
+  });
+  assert.equal(preview.ok, true);
+  assert.equal(preview.usedFallback, true);
+
+  chrome.__state.storage.allowHeuristicFallback = false;
+
+  const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 9 });
+  assert.equal(tidy.ok, false, "toggling allowHeuristicFallback off must not reuse a plan cached from before the toggle");
+  assert.equal(tidy.providerErrorKind, "missing-host-permission");
+  assert.equal(chrome.__state.tabs.every((tab) => tab.groupId === -1), true);
+}
+
+{
+  const chrome = createFakeChrome({
+    tabs: [
       { id: 1, title: "Codex Issue", url: "https://github.com/openai/codex/issues/1", windowId: 2, index: 0, groupId: 7 },
       { id: 2, title: "Codex PR", url: "https://github.com/openai/codex/pull/2", windowId: 2, index: 1, groupId: -1 },
       { id: 3, title: "Existing Group", url: "https://example.com", windowId: 2, index: 2, groupId: 7 }

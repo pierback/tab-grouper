@@ -342,6 +342,11 @@ function createPlanCacheKeyInput({ windowId, settings, groupableTabs, existingGr
     includePageHints: settings.includePageHints,
     keepExistingGroups: settings.keepExistingGroups,
     ignorePinnedTabs: settings.ignorePinnedTabs,
+    allowHeuristicFallback: settings.allowHeuristicFallback,
+    openaiApiKey: settings.openaiApiKey,
+    openaiModel: settings.openaiModel,
+    anthropicApiKey: settings.anthropicApiKey,
+    anthropicModel: settings.anthropicModel,
     groupableTabs: groupableTabs.map((tab) => ({
       id: tab.id,
       title: tab.title,

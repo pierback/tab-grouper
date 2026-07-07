@@ -86,14 +86,14 @@ func (runner CLIRunner) Run(ctx context.Context, request Request, prompt string)
 	}
 
 	result, err := runner.Commands.Run(ctx, spec)
-	if err != nil {
-		return Plan{}, classifyCLIError(request.Provider, result, err)
-	}
 	if request.Provider == "codex" && codexAttemptedToolUse(result.Stdout) {
 		return Plan{}, BridgeError{
 			Kind: "cli-blocked-tool-use",
 			Err:  errors.New("codex CLI attempted a disallowed action; its response was rejected"),
 		}
+	}
+	if err != nil {
+		return Plan{}, classifyCLIError(request.Provider, result, err)
 	}
 
 	outputText := result.Stdout
