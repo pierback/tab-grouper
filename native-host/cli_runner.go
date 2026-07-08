@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const planSchemaJSON = `{"type":"object","properties":{"groups":{"type":"array","maxItems":12,"items":{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":32},"color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"]},"tabIds":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"integer"}}},"required":["name","color","tabIds"],"additionalProperties":false}},"assignments":{"type":"array","maxItems":50,"items":{"type":"object","properties":{"groupId":{"type":"integer"},"tabIds":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"integer"}}},"required":["groupId","tabIds"],"additionalProperties":false}}},"required":["groups"],"additionalProperties":false}`
+const planSchemaJSON = `{"type":"object","properties":{"groups":{"type":"array","maxItems":12,"items":{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":32},"color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"]},"tabIds":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"integer"}}},"required":["name","color","tabIds"],"additionalProperties":false}},"assignments":{"type":"array","maxItems":50,"items":{"type":"object","properties":{"groupId":{"type":"integer"},"tabIds":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"integer"}}},"required":["groupId","tabIds"],"additionalProperties":false}}},"required":["groups","assignments"],"additionalProperties":false}`
 const CLIStatusTimeout = 3 * time.Second
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)

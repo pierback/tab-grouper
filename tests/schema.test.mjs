@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { normalizeGroupName, normalizeGroupPlan, pickColor } from "../lib/schema.js";
+import { normalizeGroupName, normalizeGroupPlan, pickColor, TAB_GROUP_PLAN_SCHEMA } from "../lib/schema.js";
 
 const availableTabs = [
   { id: 1 },
@@ -81,5 +81,29 @@ assert.deepEqual(
 assert.equal(normalizeGroupName("", "Fallback"), "Fallback");
 assert.equal(normalizeGroupName("a".repeat(40)).length, 32);
 assert.equal(pickColor(0), "blue");
+
+assertStrictObjectSchema(TAB_GROUP_PLAN_SCHEMA, "$");
+
+// OpenAI's strict structured-output mode rejects any object schema where
+// "required" does not list every key in "properties". This guards against a
+// field being added to the schema without also adding it to "required" - that
+// exact mismatch shipped silently in the native-host's copy of this schema
+// once already, since no test exercises the real API's strict-mode validator.
+function assertStrictObjectSchema(node, path) {
+  if (!node || node.type !== "object") {
+    return;
+  }
+  const properties = node.properties || {};
+  const required = new Set(node.required || []);
+  for (const name of Object.keys(properties)) {
+    assert.ok(required.has(name), `${path}.properties.${name} is not listed in required`);
+  }
+  for (const [name, value] of Object.entries(properties)) {
+    assertStrictObjectSchema(value, `${path}.${name}`);
+    if (value?.items) {
+      assertStrictObjectSchema(value.items, `${path}.${name}[]`);
+    }
+  }
+}
 
 console.log("Schema tests passed.");

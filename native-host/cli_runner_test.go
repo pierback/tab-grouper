@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"slices"
@@ -291,6 +292,48 @@ func (runner *recordingCommandRunner) lastSpec(t *testing.T) CommandSpec {
 		t.Fatal("command was not called")
 	}
 	return runner.specs[len(runner.specs)-1]
+}
+
+func TestPlanSchemaJSONRequiresEveryProperty(t *testing.T) {
+	// OpenAI's strict structured-output mode (used via codex --output-schema
+	// and claude --json-schema) rejects any schema where an object's
+	// "required" array does not list every key in "properties". This test
+	// exists because that mismatch shipped silently once already: nothing
+	// exercises the real CLI against the real API, so a missing field in
+	// "required" only surfaces as a live invalid_json_schema error.
+	var root map[string]any
+	if err := json.Unmarshal([]byte(planSchemaJSON), &root); err != nil {
+		t.Fatalf("planSchemaJSON is not valid JSON: %v", err)
+	}
+	assertStrictObjectSchema(t, "$", root)
+}
+
+func assertStrictObjectSchema(t *testing.T, path string, node map[string]any) {
+	t.Helper()
+	if node["type"] != "object" {
+		return
+	}
+	properties, _ := node["properties"].(map[string]any)
+	requiredRaw, _ := node["required"].([]any)
+	required := map[string]bool{}
+	for _, entry := range requiredRaw {
+		if name, ok := entry.(string); ok {
+			required[name] = true
+		}
+	}
+	for name := range properties {
+		if !required[name] {
+			t.Fatalf("%s.properties.%s is not listed in required (strict schema mode requires every property to be required)", path, name)
+		}
+	}
+	for name, value := range properties {
+		if child, ok := value.(map[string]any); ok {
+			assertStrictObjectSchema(t, path+"."+name, child)
+			if items, ok := child["items"].(map[string]any); ok {
+				assertStrictObjectSchema(t, path+"."+name+"[]", items)
+			}
+		}
+	}
 }
 
 func assertBridgeErrorKind(t *testing.T, err error, expected string) {
