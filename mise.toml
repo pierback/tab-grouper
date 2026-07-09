@@ -1,3 +1,9 @@
 [tools]
 go = "1.25"
 node = "26"
+pnpm = "11.10.0"
+# nub install works, but its generated node_modules/.bin/* shims always wrap targets
+# with `node`, breaking esbuild (whose bin/esbuild is a native binary after postinstall) -
+# this bites npm run, nub run, and direct .bin invocation alike (nubjs/nub#394). pnpm
+# doesn't have this issue, so pnpm is the toolchain until nub fixes bin-shim generation
+# for native-binary bin targets.

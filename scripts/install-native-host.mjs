@@ -44,7 +44,7 @@ const configPath = `${binaryPath}.config.json`;
 const codexExecutable = resolveExecutablePath(args["codex-path"] || "codex");
 const claudeExecutable = resolveExecutablePath(args["claude-path"] || "claude");
 
-run("npm", ["run", "build"], root);
+run("pnpm", ["run", "build"], root);
 
 fs.mkdirSync(binaryDir, { recursive: true });
 run("go", ["build", "-o", binaryPath, "."], nativeHostDir);
@@ -161,9 +161,9 @@ function isExecutableFile(filePath) {
 
 function printUsage() {
   console.log(`Usage:
-  npm run native:install -- --extension-id <chrome-extension-id>
-  npm run native:install -- --browser brave --extension-id <chrome-extension-id>
-  npm run native:install -- --extension-id <chrome-extension-id> --codex-path /path/to/codex --claude-path /path/to/claude
+  pnpm run native:install -- --extension-id <chrome-extension-id>
+  pnpm run native:install -- --browser brave --extension-id <chrome-extension-id>
+  pnpm run native:install -- --extension-id <chrome-extension-id> --codex-path /path/to/codex --claude-path /path/to/claude
 
 Find the extension ID in chrome://extensions after loading this folder unpacked.`);
 }

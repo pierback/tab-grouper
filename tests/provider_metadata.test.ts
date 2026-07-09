@@ -71,7 +71,7 @@ assert.equal(
 );
 assert.equal(
   getFriendlyProviderErrorMessage({ providerErrorKind: "native-host-not-found" }),
-  "Native bridge is not installed. Run npm run native:install."
+  "Native bridge is not installed. Run pnpm run native:install."
 );
 assert.equal(
   getFriendlyProviderErrorMessage({ providerErrorKind: "unknown-kind", message: "raw detail" }),

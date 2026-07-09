@@ -3,16 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.10.0",
   "description": "Chrome MV3 extension that tidies tabs into logical groups.",
   "scripts": {
     "build": "esbuild src/service_worker.ts src/popup.ts src/options.ts --bundle --splitting --format=esm --platform=browser --target=chrome120 --outdir=dist --sourcemap",
-    "build:watch": "npm run build -- --watch",
+    "build:watch": "pnpm run build -- --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "test": "npm run typecheck && npm run build && tsx tests/schema.test.ts && tsx tests/settings.test.ts && tsx tests/tabs.test.ts && tsx tests/page_hints.test.ts && tsx tests/hint_cache.test.ts && tsx tests/heuristics.test.ts && tsx tests/undo.test.ts && tsx tests/native_cli_provider.test.ts && tsx tests/providers.test.ts && tsx tests/provider_metadata.test.ts && tsx tests/plan_response.test.ts && tsx tests/plan_cache.test.ts && tsx tests/service_worker.test.ts && tsx tests/popup.test.ts && tsx tests/options.test.ts && node scripts/validate-extension.mjs && npm run test:go && npm run test:native-host-e2e",
+    "test": "pnpm run typecheck && pnpm run build && tsx tests/schema.test.ts && tsx tests/settings.test.ts && tsx tests/tabs.test.ts && tsx tests/page_hints.test.ts && tsx tests/hint_cache.test.ts && tsx tests/heuristics.test.ts && tsx tests/undo.test.ts && tsx tests/native_cli_provider.test.ts && tsx tests/providers.test.ts && tsx tests/provider_metadata.test.ts && tsx tests/plan_response.test.ts && tsx tests/plan_cache.test.ts && tsx tests/service_worker.test.ts && tsx tests/popup.test.ts && tsx tests/options.test.ts && node scripts/validate-extension.mjs && pnpm run test:go && pnpm run test:native-host-e2e",
     "test:go": "cd native-host && go test ./...",
     "test:native-host-e2e": "node scripts/test-native-host-e2e.mjs",
     "native:install": "node scripts/install-native-host.mjs",
-    "smoke:chrome": "npm run build && node scripts/smoke-extension.mjs"
+    "smoke:chrome": "pnpm run build && node scripts/smoke-extension.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.2.2",
