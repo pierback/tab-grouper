@@ -2,6 +2,7 @@ import { Cause, Effect, Exit, Option } from "effect";
 import type {
   ExistingGroup,
   LocalCliProvider,
+  NativeModelInfo,
   PromptTabRecord,
   Provider,
   ProviderError,
@@ -15,9 +16,11 @@ type NativeCliSettings = Partial<Settings>;
 export const NATIVE_HOST_NAME = "com.fabianpieringer.tab_grouper";
 const REQUEST_TYPE = "TAB_GROUP_PLAN_REQUEST";
 const STATUS_REQUEST_TYPE = "NATIVE_HOST_STATUS_REQUEST";
+const LIST_MODELS_REQUEST_TYPE = "NATIVE_HOST_LIST_MODELS_REQUEST";
 const RESPONSE_TYPE = "TAB_GROUP_PLAN_RESPONSE";
 const DEFAULT_TIMEOUT_MS = 15000;
 const STATUS_TIMEOUT_MS = 3000;
+const LIST_MODELS_TIMEOUT_MS = 5000;
 const EXTENSION_TIMEOUT_MARGIN_MS = 2500;
 
 interface NativePlanRequest {
@@ -48,6 +51,13 @@ interface NativeStatusRequest {
   provider: LocalCliProvider;
 }
 
+interface NativeListModelsRequest {
+  version: 1;
+  type: typeof LIST_MODELS_REQUEST_TYPE;
+  requestId: string;
+  provider: "codex";
+}
+
 interface NativeResponse {
   type?: string;
   requestId?: string;
@@ -60,6 +70,7 @@ interface NativeResponse {
   durationMs?: number;
   duration?: number;
   status?: NativeCliStatus;
+  models?: NativeModelInfo[];
 }
 
 interface NativeCliStatus {
@@ -141,7 +152,23 @@ export async function checkNativeCliStatus(provider: Provider | LocalCliProvider
   };
 }
 
-function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest, timeoutMs: number): Promise<NativeResponse> {
+export async function listNativeModels(provider: Provider | LocalCliProvider): Promise<NativeModelInfo[]> {
+  const cliProvider = normalizeCliProvider(provider);
+  if (cliProvider !== "codex") {
+    throw providerError("native-host-protocol-error", "Only the Codex CLI supports model listing.");
+  }
+  await ensureNativeMessagingPermission();
+  const request: NativeListModelsRequest = {
+    version: 1,
+    type: LIST_MODELS_REQUEST_TYPE,
+    requestId: createRequestId(),
+    provider: "codex"
+  };
+  const response = await sendNativeRequest(request, LIST_MODELS_TIMEOUT_MS);
+  return Array.isArray(response.models) ? response.models : [];
+}
+
+function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest | NativeListModelsRequest, timeoutMs: number): Promise<NativeResponse> {
   const portEffect = Effect.callback<NativeResponse, ProviderError>((resume) => {
     let port: chrome.runtime.Port;
     try {

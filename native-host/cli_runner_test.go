@@ -306,6 +306,40 @@ func TestCLIRunnerAddsModelFlags(t *testing.T) {
 	}
 }
 
+func TestCLIRunnerListModelsParsesVisibleCodexModels(t *testing.T) {
+	commands := &recordingCommandRunner{
+		result: CommandResult{Stdout: `{"models":[{"slug":"gpt-5.5","display_name":"GPT-5.5","visibility":"list","base_instructions":"large value omitted"},{"slug":"codex-auto-review","display_name":"Auto Review","visibility":"hide"},{"slug":"gpt-5.4-mini","display_name":"GPT-5.4-Mini","visibility":"list"}]}`},
+	}
+	runner := CLIRunner{
+		Commands:        commands,
+		CodexExecutable: "codex-test",
+	}
+
+	models, err := runner.ListModels(context.Background(), Request{
+		Version:   ProtocolVersion,
+		Type:      RequestListModelsType,
+		RequestID: "models-1",
+		Provider:  "codex",
+	})
+	if err != nil {
+		t.Fatalf("ListModels failed: %v", err)
+	}
+	if !slices.Equal(models, []ModelInfo{
+		{Slug: "gpt-5.5", DisplayName: "GPT-5.5"},
+		{Slug: "gpt-5.4-mini", DisplayName: "GPT-5.4-Mini"},
+	}) {
+		t.Fatalf("unexpected models: %#v", models)
+	}
+
+	spec := commands.lastSpec(t)
+	if spec.Executable != "codex-test" {
+		t.Fatalf("unexpected executable: %s", spec.Executable)
+	}
+	if !slices.Equal(spec.Args, []string{"debug", "models"}) {
+		t.Fatalf("unexpected args: %#v", spec.Args)
+	}
+}
+
 func TestParsePlanTextNormalizesUnsafeGroups(t *testing.T) {
 	request := validRequest()
 	request.Tabs = append(request.Tabs, Tab{ID: 3, Title: "Docs", Domain: "developer.chrome.com"})

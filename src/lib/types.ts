@@ -10,6 +10,11 @@ export type Provider =
 
 export type LocalCliProvider = "codex" | "claude";
 
+export interface NativeModelInfo {
+  slug: string;
+  displayName: string;
+}
+
 export interface Settings {
   provider: Provider;
   openaiApiKey: string;

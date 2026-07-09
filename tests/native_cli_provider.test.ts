@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { checkNativeCliStatus, createPlanWithNativeCli, NATIVE_HOST_NAME } from "../src/lib/native_cli_provider.js";
+import { checkNativeCliStatus, createPlanWithNativeCli, listNativeModels, NATIVE_HOST_NAME } from "../src/lib/native_cli_provider.js";
 import type { ProviderError } from "../src/lib/types.js";
 
 interface NativeRequest {
@@ -24,6 +24,7 @@ interface NativeResponse {
   };
   durationMs?: number;
   status?: Record<string, unknown>;
+  models?: Array<{ slug: string; displayName: string }>;
 }
 
 interface CreateChromeConfig {
@@ -307,6 +308,33 @@ const tabs = [
   assert.equal(status.configured, true);
   assert.equal(status.executableAvailable, true);
   assert.equal(chrome.__state.sentMessages[0]!.type, "NATIVE_HOST_STATUS_REQUEST");
+  assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
+}
+
+{
+  const chrome = createChrome({
+    nativeResponse(message) {
+      return {
+        version: 1,
+        type: "TAB_GROUP_PLAN_RESPONSE",
+        requestId: message.requestId,
+        ok: true,
+        provider: "local-codex-cli",
+        models: [
+          { slug: "gpt-5.5", displayName: "GPT-5.5" },
+          { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini" }
+        ]
+      };
+    }
+  });
+  globalThis.chrome = chrome as unknown as typeof globalThis.chrome;
+
+  const models = await listNativeModels("local-codex-cli");
+  assert.deepEqual(models, [
+    { slug: "gpt-5.5", displayName: "GPT-5.5" },
+    { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini" }
+  ]);
+  assert.equal(chrome.__state.sentMessages[0]!.type, "NATIVE_HOST_LIST_MODELS_REQUEST");
   assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
 }
 

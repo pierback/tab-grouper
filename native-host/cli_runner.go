@@ -17,6 +17,7 @@ import (
 
 const planSchemaJSON = `{"type":"object","properties":{"groups":{"type":"array","maxItems":40,"items":{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":32},"color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"]},"tabIds":{"type":"array","minItems":1,"maxItems":300,"items":{"type":"integer"}}},"required":["name","color","tabIds"],"additionalProperties":false}},"assignments":{"type":"array","maxItems":100,"items":{"type":"object","properties":{"groupId":{"type":"integer"},"tabIds":{"type":"array","minItems":1,"maxItems":300,"items":{"type":"integer"}}},"required":["groupId","tabIds"],"additionalProperties":false}}},"required":["groups","assignments"],"additionalProperties":false}`
 const CLIStatusTimeout = 3 * time.Second
+const CLIModelsTimeout = 5 * time.Second
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 
@@ -64,6 +65,39 @@ func (runner CLIRunner) Status(ctx context.Context, request Request) (Status, er
 		}
 	}
 	return status, nil
+}
+
+func (runner CLIRunner) ListModels(ctx context.Context, request Request) ([]ModelInfo, error) {
+	runner = runner.withDefaults()
+	if request.Provider != "codex" {
+		return nil, BridgeError{
+			Kind: "cli-not-implemented",
+			Err:  fmt.Errorf("%s model listing is not implemented", request.Provider),
+		}
+	}
+	if runner.CodexExecutable == "" {
+		return nil, BridgeError{
+			Kind: "cli-not-found",
+			Err:  errors.New("codex executable was not configured"),
+		}
+	}
+
+	modelsCtx, cancel := context.WithTimeout(ctx, CLIModelsTimeout)
+	defer cancel()
+	result, err := runner.Commands.Run(modelsCtx, CommandSpec{
+		Executable: runner.CodexExecutable,
+		Args:       []string{"debug", "models"},
+	})
+	if errors.Is(modelsCtx.Err(), context.DeadlineExceeded) {
+		return nil, BridgeError{
+			Kind: "cli-timeout",
+			Err:  fmt.Errorf("%s model listing timed out", request.Provider),
+		}
+	}
+	if err != nil {
+		return nil, classifyCLIError(request.Provider, result, err)
+	}
+	return parseCodexModels(result.Stdout)
 }
 
 func (runner CLIRunner) Run(ctx context.Context, request Request, prompt string) (Plan, error) {
@@ -127,6 +161,38 @@ func (runner CLIRunner) Run(ctx context.Context, request Request, prompt string)
 		plan.Usage = codexUsage
 	}
 	return plan, nil
+}
+
+func parseCodexModels(output string) ([]ModelInfo, error) {
+	var payload struct {
+		Models []struct {
+			Slug        string `json:"slug"`
+			DisplayName string `json:"display_name"`
+			Visibility  string `json:"visibility"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &payload); err != nil {
+		return nil, BridgeError{
+			Kind: "malformed-output",
+			Err:  fmt.Errorf("codex CLI returned invalid models JSON: %w", err),
+		}
+	}
+
+	models := []ModelInfo{}
+	for _, model := range payload.Models {
+		if model.Visibility != "list" || model.Slug == "" {
+			continue
+		}
+		displayName := model.DisplayName
+		if displayName == "" {
+			displayName = model.Slug
+		}
+		models = append(models, ModelInfo{
+			Slug:        model.Slug,
+			DisplayName: displayName,
+		})
+	}
+	return models, nil
 }
 
 func (runner CLIRunner) buildCommandSpec(request Request, prompt string, tempDir string, schemaPath string) (CommandSpec, string, error) {

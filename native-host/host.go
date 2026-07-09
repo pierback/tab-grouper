@@ -15,6 +15,10 @@ type StatusRunner interface {
 	Status(ctx context.Context, request Request) (Status, error)
 }
 
+type ModelsRunner interface {
+	ListModels(ctx context.Context, request Request) ([]ModelInfo, error)
+}
+
 func NewHost() Host {
 	configPath, err := DefaultConfigPath()
 	if err != nil {
@@ -48,6 +52,13 @@ func (runner StaticErrorRunner) Status(ctx context.Context, request Request) (St
 	return Status{}, BridgeError{Kind: "native-host-config-error", Err: fmt.Errorf("native host is not configured")}
 }
 
+func (runner StaticErrorRunner) ListModels(ctx context.Context, request Request) ([]ModelInfo, error) {
+	if runner.Err != nil {
+		return nil, runner.Err
+	}
+	return nil, BridgeError{Kind: "native-host-config-error", Err: fmt.Errorf("native host is not configured")}
+}
+
 func (host Host) Handle(ctx context.Context, request Request) Response {
 	if err := ValidateRequest(request); err != nil {
 		return ErrorResponse(request, "native-host-protocol-error", err)
@@ -71,6 +82,22 @@ func (host Host) Handle(ctx context.Context, request Request) Response {
 			return ErrorResponse(request, kind, err)
 		}
 		return StatusResponse(request, status)
+	}
+	if request.Type == RequestListModelsType {
+		modelsRunner, ok := host.Runner.(ModelsRunner)
+		if !ok {
+			return ErrorResponse(request, "native-host-config-error", fmt.Errorf("native host model listing is unavailable"))
+		}
+		models, err := modelsRunner.ListModels(ctx, request)
+		if err != nil {
+			kind := "native-host-config-error"
+			var bridgeError BridgeError
+			if errors.As(err, &bridgeError) {
+				kind = bridgeError.Kind
+			}
+			return ErrorResponse(request, kind, err)
+		}
+		return ModelsResponse(request, models)
 	}
 
 	prompt, err := BuildGroupingPrompt(request)

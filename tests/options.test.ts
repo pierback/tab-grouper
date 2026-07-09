@@ -13,8 +13,11 @@ interface FakeElement {
   textContent: string;
   hidden: boolean;
   disabled: boolean;
+  children: FakeElement[];
   dataset: { providerSection?: string };
   elements?: Record<string, FakeElement>;
+  appendChild(child: FakeElement): FakeElement;
+  replaceChildren(...children: FakeElement[]): void;
   addEventListener(event: string, callback: (event: FakeEvent) => void | Promise<void>): void;
   dispatch(event: string, payload?: Record<string, unknown>): Promise<void>;
   classList: {
@@ -31,8 +34,7 @@ interface FakeElements {
   openaiModel: FakeElement;
   anthropicApiKey: FakeElement;
   anthropicModel: FakeElement;
-  codexCliModel: FakeElement;
-  claudeCliModel: FakeElement;
+  model: FakeElement;
   includeFullUrls: FakeElement;
   includePageHints: FakeElement;
   allowHeuristicFallback: FakeElement;
@@ -64,13 +66,21 @@ interface NativeMessage {
 
 interface ImportOptionsConfig {
   permissionGrant?: boolean;
+  nativePermissionGranted?: boolean;
   stored?: Record<string, unknown>;
   nativeStatus?: NativeStatus | null;
+  nativeModels?: Array<{ slug: string; displayName: string }>;
 }
 
-async function importOptions({ permissionGrant = true, stored = {}, nativeStatus = null }: ImportOptionsConfig = {}) {
+async function importOptions({
+  permissionGrant = true,
+  nativePermissionGranted = false,
+  stored = {},
+  nativeStatus = null,
+  nativeModels = []
+}: ImportOptionsConfig = {}) {
   const elements = createFakeElements();
-  const fakeChrome = createFakeChrome({ permissionGrant, stored, nativeStatus });
+  const fakeChrome = createFakeChrome({ permissionGrant, nativePermissionGranted, stored, nativeStatus, nativeModels });
   globalThis.chrome = fakeChrome as unknown as typeof globalThis.chrome;
   globalThis.document = createFakeDocument(elements) as unknown as Document;
   globalThis.window = {
@@ -127,8 +137,7 @@ function createFakeElements(): FakeElements {
     ["openaiModel", "text", "gpt-5.4-mini"],
     ["anthropicApiKey", "text", ""],
     ["anthropicModel", "text", "claude-sonnet-4-6-20260217"],
-    ["codexCliModel", "text", ""],
-    ["claudeCliModel", "text", ""],
+    ["model", "select", ""],
     ["includeFullUrls", "checkbox", false],
     ["includePageHints", "checkbox", false],
     ["allowHeuristicFallback", "checkbox", true],
@@ -170,7 +179,15 @@ function createElement(id: string, type: string): FakeElement {
     textContent: "",
     hidden: false,
     disabled: false,
+    children: [],
     dataset: {},
+    appendChild(child: FakeElement) {
+      this.children.push(child);
+      return child;
+    },
+    replaceChildren(...children: FakeElement[]) {
+      this.children = children;
+    },
     addEventListener(event: string, callback: (event: FakeEvent) => void | Promise<void>) {
       listeners.set(event, callback);
     },
@@ -217,17 +234,20 @@ function createFakeDocument(elements: FakeElements) {
         return elements.__providerSections;
       }
       throw new Error(`Unsupported selector: ${selector}`);
+    },
+    createElement(tagName: string) {
+      return createElement(tagName, tagName);
     }
   };
 }
 
-function createFakeChrome({ permissionGrant, stored, nativeStatus }: Required<ImportOptionsConfig>) {
+function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, nativeStatus, nativeModels }: Required<ImportOptionsConfig>) {
   const state = {
     storage: { ...stored },
     permissionRequests: [] as chrome.permissions.Permissions[],
     permissionRemovals: [] as chrome.permissions.Permissions[],
     sentNativeMessages: [] as NativeMessage[],
-    nativePermissionGranted: false
+    nativePermissionGranted
   };
   return {
     __state: state,
@@ -283,6 +303,17 @@ function createFakeChrome({ permissionGrant, stored, nativeStatus }: Required<Im
             state.sentNativeMessages.push(message);
             setTimeout(() => {
               for (const callback of messageListeners) {
+                if (message.type === "NATIVE_HOST_LIST_MODELS_REQUEST") {
+                  callback({
+                    version: 1,
+                    type: "TAB_GROUP_PLAN_RESPONSE",
+                    requestId: message.requestId,
+                    ok: true,
+                    provider: "local-codex-cli",
+                    models: nativeModels
+                  });
+                  continue;
+                }
                 callback({
                   version: 1,
                   type: "TAB_GROUP_PLAN_RESPONSE",
@@ -336,15 +367,14 @@ function createFakeChrome({ permissionGrant, stored, nativeStatus }: Required<Im
 {
   const { elements, chrome } = await importOptions();
   elements.provider.value = "local-codex-cli";
-  elements.codexCliModel.value = " gpt-5.5-codex ";
-  elements.claudeCliModel.value = " claude-opus-test ";
+  elements.model.value = " gpt-5.5-codex ";
   elements.allowHeuristicFallback.checked = false;
   await elements["settings-form"].dispatch("submit");
   assert.deepEqual(chrome.__state.permissionRequests, [{ permissions: ["nativeMessaging"] }]);
   assert.deepEqual(chrome.__state.permissionRemovals, [{ origins: ["https://api.openai.com/*", "https://api.anthropic.com/*"] }]);
   assert.equal(chrome.__state.storage.provider, "local-codex-cli");
   assert.equal(chrome.__state.storage.codexCliModel, "gpt-5.5-codex");
-  assert.equal(chrome.__state.storage.claudeCliModel, "claude-opus-test");
+  assert.equal(chrome.__state.storage.claudeCliModel, "");
   assert.equal(chrome.__state.storage.allowHeuristicFallback, false);
 }
 
@@ -353,11 +383,41 @@ function createFakeChrome({ permissionGrant, stored, nativeStatus }: Required<Im
     stored: {
       provider: "local-claude-cli",
       codexCliModel: "codex-stored",
-      claudeCliModel: "claude-stored"
+      claudeCliModel: "claude-sonnet-5"
     }
   });
-  assert.equal(elements.codexCliModel.value, "codex-stored");
-  assert.equal(elements.claudeCliModel.value, "claude-stored");
+  assert.equal(elements.model.value, "claude-sonnet-5");
+  assert.deepEqual(elements.model.children.map((option) => [option.value, option.textContent]), [
+    ["", "Use claude CLI's own default"],
+    ["claude-fable-5", "Fable 5"],
+    ["claude-opus-4-8", "Opus 4.8"],
+    ["claude-sonnet-5", "Sonnet 5"],
+    ["claude-haiku-4-5-20251001", "Haiku 4.5"]
+  ]);
+}
+
+{
+  const { elements, chrome } = await importOptions({
+    nativePermissionGranted: true,
+    stored: {
+      provider: "local-codex-cli",
+      codexCliModel: "gpt-5.4-mini",
+      claudeCliModel: "claude-opus-4-8"
+    },
+    nativeModels: [
+      { slug: "gpt-5.5", displayName: "GPT-5.5" },
+      { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini" }
+    ]
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(chrome.__state.sentNativeMessages[0]!.type, "NATIVE_HOST_LIST_MODELS_REQUEST");
+  assert.equal(chrome.__state.sentNativeMessages[0]!.provider, "codex");
+  assert.equal(elements.model.value, "gpt-5.4-mini");
+  assert.deepEqual(elements.model.children.map((option) => [option.value, option.textContent]), [
+    ["", "Use codex CLI's own default"],
+    ["gpt-5.5", "GPT-5.5"],
+    ["gpt-5.4-mini", "GPT-5.4-Mini"]
+  ]);
 }
 
 {

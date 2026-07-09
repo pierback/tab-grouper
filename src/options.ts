@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, getSettings, normalizeSettings, saveSettings } from "./lib/settings.js";
-import { checkNativeCliStatus } from "./lib/native_cli_provider.js";
+import { checkNativeCliStatus, listNativeModels } from "./lib/native_cli_provider.js";
 import {
   getAllProviderOrigins,
   getAllProviderPermissions,
@@ -8,7 +8,7 @@ import {
   getProviderOrigins,
   getProviderPermissions
 } from "./lib/provider_metadata.js";
-import type { PartialSettings, Provider, Settings } from "./lib/types.js";
+import type { NativeModelInfo, PartialSettings, Provider, Settings } from "./lib/types.js";
 
 const form = document.querySelector<HTMLFormElement>("#settings-form")!;
 const saveStatus = document.querySelector<HTMLElement>("#save-status")!;
@@ -19,11 +19,24 @@ const dataMode = document.querySelector<HTMLElement>("#data-mode")!;
 const dataSummary = document.querySelector<HTMLElement>("#data-summary")!;
 const testNativeBridgeButton = document.querySelector<HTMLButtonElement>("#test-native-bridge")!;
 const nativeBridgeStatus = document.querySelector<HTMLElement>("#native-bridge-status")!;
+const modelSelect = document.querySelector<HTMLSelectElement>("#model")!;
+
+const CLAUDE_MODEL_OPTIONS: NativeModelInfo[] = [
+  { slug: "claude-fable-5", displayName: "Fable 5" },
+  { slug: "claude-opus-4-8", displayName: "Opus 4.8" },
+  { slug: "claude-sonnet-5", displayName: "Sonnet 5" },
+  { slug: "claude-haiku-4-5-20251001", displayName: "Haiku 4.5" }
+];
+
+let currentSettings: Settings = DEFAULT_SETTINGS;
+let modelLoadSequence = 0;
 
 initOptions();
 
-providerSelect.addEventListener("change", () => {
-  updateProviderSections(providerSelect.value);
+providerSelect.addEventListener("change", async () => {
+  const provider = providerSelect.value;
+  updateProviderSections(provider);
+  await populateModelSelect(provider, currentSettings);
   updateDataScope();
 });
 
@@ -47,6 +60,7 @@ form.addEventListener("submit", async (event) => {
     const settings = normalizeSettings(readFormSettings());
     await ensureProviderPermission(settings.provider);
     await saveSettings(settings);
+    currentSettings = settings;
     await removeUnusedProviderPermissions(settings.provider);
     updateDataScope(settings);
     setSaveStatus("Saved", false);
@@ -60,6 +74,7 @@ form.addEventListener("submit", async (event) => {
 
 async function initOptions() {
   const settings = await getSettings();
+  currentSettings = settings;
   for (const [key, value] of Object.entries(settings)) {
     const input = ((form.elements as any)[key] || form.elements.namedItem?.(key)) as HTMLInputElement | HTMLSelectElement | null;
     if (!input) {
@@ -72,6 +87,7 @@ async function initOptions() {
     }
   }
   updateProviderSections(settings.provider);
+  await populateModelSelect(settings.provider, settings);
   updateDataScope(settings);
 }
 
@@ -100,14 +116,16 @@ function updateDataScope(settings = readCurrentScopeSettings()): void {
 
 function readFormSettings(): PartialSettings {
   const formData = new FormData(form);
+  const provider = String(formData.get("provider") || DEFAULT_SETTINGS.provider) as Provider;
+  const localCliModel = String(modelSelect.value || "").trim();
   return {
-    provider: String(formData.get("provider") || DEFAULT_SETTINGS.provider) as Provider,
+    provider,
     openaiApiKey: String(formData.get("openaiApiKey") || ""),
     openaiModel: String(formData.get("openaiModel") || DEFAULT_SETTINGS.openaiModel).trim(),
     anthropicApiKey: String(formData.get("anthropicApiKey") || ""),
     anthropicModel: String(formData.get("anthropicModel") || DEFAULT_SETTINGS.anthropicModel).trim(),
-    codexCliModel: String(formData.get("codexCliModel") || "").trim(),
-    claudeCliModel: String(formData.get("claudeCliModel") || "").trim(),
+    codexCliModel: provider === "local-codex-cli" ? localCliModel : currentSettings.codexCliModel,
+    claudeCliModel: provider === "local-claude-cli" ? localCliModel : currentSettings.claudeCliModel,
     includeFullUrls: formData.get("includeFullUrls") === "on",
     includePageHints: includePageHintsInput ? formData.get("includePageHints") === "on" : false,
     allowHeuristicFallback: formData.get("allowHeuristicFallback") === "on",
@@ -116,6 +134,66 @@ function readFormSettings(): PartialSettings {
     collapseGroups: formData.get("collapseGroups") === "on",
     minimumGroupSize: clampNumber(formData.get("minimumGroupSize"), 2, 10, 2)
   };
+}
+
+async function populateModelSelect(provider: string, settings: Settings): Promise<void> {
+  const sequence = ++modelLoadSequence;
+  if (!isLocalCliProvider(provider)) {
+    replaceModelOptions("Use CLI default", [], "");
+    modelSelect.disabled = false;
+    return;
+  }
+
+  if (provider === "local-claude-cli") {
+    replaceModelOptions("Use claude CLI's own default", CLAUDE_MODEL_OPTIONS, settings.claudeCliModel);
+    modelSelect.disabled = false;
+    return;
+  }
+
+  replaceModelOptions("Use codex CLI's own default", [], settings.codexCliModel, "Loading Codex models...");
+  modelSelect.disabled = true;
+  setNativeBridgeStatus("Loading Codex models...", false);
+  try {
+    const models = await listNativeModels("codex");
+    if (sequence !== modelLoadSequence) {
+      return;
+    }
+    replaceModelOptions("Use codex CLI's own default", models, settings.codexCliModel);
+    setNativeBridgeStatus("", false);
+  } catch (error) {
+    if (sequence !== modelLoadSequence) {
+      return;
+    }
+    replaceModelOptions("Use codex CLI's own default", [], "");
+    setNativeBridgeStatus(getFriendlyProviderErrorMessage(error), true);
+  } finally {
+    if (sequence === modelLoadSequence) {
+      modelSelect.disabled = false;
+    }
+  }
+}
+
+function replaceModelOptions(defaultLabel: string, models: NativeModelInfo[], selectedValue: string, loadingLabel = ""): void {
+  modelSelect.replaceChildren();
+  modelSelect.appendChild(createModelOption("", defaultLabel));
+  if (loadingLabel) {
+    const loadingOption = createModelOption("", loadingLabel);
+    loadingOption.disabled = true;
+    modelSelect.appendChild(loadingOption);
+  }
+  for (const model of models) {
+    modelSelect.appendChild(createModelOption(model.slug, model.displayName || model.slug));
+  }
+
+  const allowedValues = new Set(models.map((model) => model.slug));
+  modelSelect.value = selectedValue && allowedValues.has(selectedValue) ? selectedValue : "";
+}
+
+function createModelOption(value: string, label: string): HTMLOptionElement {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  return option;
 }
 
 function readCurrentScopeSettings(): Pick<Settings, "provider" | "includeFullUrls" | "includePageHints"> {

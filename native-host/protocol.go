@@ -9,16 +9,17 @@ import (
 )
 
 const (
-	ProtocolVersion   = 1
-	RequestPlanType   = "TAB_GROUP_PLAN_REQUEST"
-	RequestStatusType = "NATIVE_HOST_STATUS_REQUEST"
-	RequestPingType   = "PING"
-	ResponseType      = "TAB_GROUP_PLAN_RESPONSE"
-	MaxRequestBytes   = 8 * 1024 * 1024
-	MaxResponseBytes  = 1024 * 1024
-	MaxTabs           = 1000
-	MaxExistingGroups = 100
-	MaxGroupTabIDs    = 300
+	ProtocolVersion       = 1
+	RequestPlanType       = "TAB_GROUP_PLAN_REQUEST"
+	RequestStatusType     = "NATIVE_HOST_STATUS_REQUEST"
+	RequestListModelsType = "NATIVE_HOST_LIST_MODELS_REQUEST"
+	RequestPingType       = "PING"
+	ResponseType          = "TAB_GROUP_PLAN_RESPONSE"
+	MaxRequestBytes       = 8 * 1024 * 1024
+	MaxResponseBytes      = 1024 * 1024
+	MaxTabs               = 1000
+	MaxExistingGroups     = 100
+	MaxGroupTabIDs        = 300
 )
 
 type Tab struct {
@@ -96,6 +97,7 @@ type Response struct {
 	Duration  int64          `json:"durationMs,omitempty"`
 	Plan      *Plan          `json:"plan,omitempty"`
 	Status    *Status        `json:"status,omitempty"`
+	Models    []ModelInfo    `json:"models,omitempty"`
 	Error     *ResponseError `json:"error,omitempty"`
 }
 
@@ -106,6 +108,11 @@ type Status struct {
 	AuthChecked         bool   `json:"authChecked"`
 	Authenticated       bool   `json:"authenticated"`
 	LockExecutables     bool   `json:"lockExecutables"`
+}
+
+type ModelInfo struct {
+	Slug        string `json:"slug"`
+	DisplayName string `json:"displayName"`
 }
 
 type ResponseError struct {
@@ -160,7 +167,7 @@ func ValidateRequest(request Request) error {
 	if request.Type == RequestPingType {
 		return nil
 	}
-	if request.Type != RequestPlanType && request.Type != RequestStatusType {
+	if request.Type != RequestPlanType && request.Type != RequestStatusType && request.Type != RequestListModelsType {
 		return errors.New("invalid request type")
 	}
 	if request.Provider != "codex" && request.Provider != "claude" {
@@ -170,6 +177,12 @@ func ValidateRequest(request Request) error {
 		return errors.New("invalid model")
 	}
 	if request.Type == RequestStatusType {
+		return nil
+	}
+	if request.Type == RequestListModelsType {
+		if request.Provider != "codex" {
+			return errors.New("list models request only supports codex provider")
+		}
 		return nil
 	}
 	if request.MinimumGroupSize < 2 || request.MinimumGroupSize > 10 {
@@ -262,6 +275,17 @@ func isAllowedTabGroupColor(color string) bool {
 		}
 	}
 	return false
+}
+
+func ModelsResponse(request Request, models []ModelInfo) Response {
+	return Response{
+		Version:   ProtocolVersion,
+		Type:      ResponseType,
+		RequestID: request.RequestID,
+		OK:        true,
+		Provider:  "local-" + request.Provider + "-cli",
+		Models:    models,
+	}
 }
 
 func StatusResponse(request Request, status Status) Response {
