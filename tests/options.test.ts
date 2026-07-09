@@ -35,6 +35,7 @@ interface FakeElements {
   anthropicApiKey: FakeElement;
   anthropicModel: FakeElement;
   model: FakeElement;
+  reasoning: FakeElement;
   includeFullUrls: FakeElement;
   includePageHints: FakeElement;
   allowHeuristicFallback: FakeElement;
@@ -69,7 +70,12 @@ interface ImportOptionsConfig {
   nativePermissionGranted?: boolean;
   stored?: Record<string, unknown>;
   nativeStatus?: NativeStatus | null;
-  nativeModels?: Array<{ slug: string; displayName: string }>;
+  nativeModels?: Array<{
+    slug: string;
+    displayName: string;
+    supportedReasoningLevels?: string[];
+    defaultReasoningLevel?: string;
+  }>;
 }
 
 async function importOptions({
@@ -138,6 +144,7 @@ function createFakeElements(): FakeElements {
     ["anthropicApiKey", "text", ""],
     ["anthropicModel", "text", "claude-sonnet-4-6-20260217"],
     ["model", "select", ""],
+    ["reasoning", "select", ""],
     ["includeFullUrls", "checkbox", false],
     ["includePageHints", "checkbox", false],
     ["allowHeuristicFallback", "checkbox", true],
@@ -368,13 +375,16 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
   const { elements, chrome } = await importOptions();
   elements.provider.value = "local-codex-cli";
   elements.model.value = " gpt-5.5-codex ";
+  elements.reasoning.value = "high";
   elements.allowHeuristicFallback.checked = false;
   await elements["settings-form"].dispatch("submit");
   assert.deepEqual(chrome.__state.permissionRequests, [{ permissions: ["nativeMessaging"] }]);
   assert.deepEqual(chrome.__state.permissionRemovals, [{ origins: ["https://api.openai.com/*", "https://api.anthropic.com/*"] }]);
   assert.equal(chrome.__state.storage.provider, "local-codex-cli");
   assert.equal(chrome.__state.storage.codexCliModel, "gpt-5.5-codex");
+  assert.equal(chrome.__state.storage.codexReasoningEffort, "high");
   assert.equal(chrome.__state.storage.claudeCliModel, "");
+  assert.equal(chrome.__state.storage.claudeReasoningEffort, "");
   assert.equal(chrome.__state.storage.allowHeuristicFallback, false);
 }
 
@@ -383,7 +393,8 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
     stored: {
       provider: "local-claude-cli",
       codexCliModel: "codex-stored",
-      claudeCliModel: "claude-sonnet-5"
+      claudeCliModel: "claude-sonnet-5",
+      claudeReasoningEffort: "max"
     }
   });
   assert.equal(elements.model.value, "claude-sonnet-5");
@@ -394,6 +405,15 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
     ["claude-sonnet-5", "Sonnet 5"],
     ["claude-haiku-4-5-20251001", "Haiku 4.5"]
   ]);
+  assert.equal(elements.reasoning.value, "max");
+  assert.deepEqual(elements.reasoning.children.map((option) => [option.value, option.textContent]), [
+    ["", "Use claude CLI's default"],
+    ["low", "low"],
+    ["medium", "medium"],
+    ["high", "high"],
+    ["xhigh", "xhigh"],
+    ["max", "max"]
+  ]);
 }
 
 {
@@ -402,11 +422,12 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
     stored: {
       provider: "local-codex-cli",
       codexCliModel: "gpt-5.4-mini",
+      codexReasoningEffort: "high",
       claudeCliModel: "claude-opus-4-8"
     },
     nativeModels: [
-      { slug: "gpt-5.5", displayName: "GPT-5.5" },
-      { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini" }
+      { slug: "gpt-5.5", displayName: "GPT-5.5", supportedReasoningLevels: ["low", "medium", "high", "xhigh"], defaultReasoningLevel: "xhigh" },
+      { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini", supportedReasoningLevels: ["low", "medium", "high"], defaultReasoningLevel: "medium" }
     ]
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -417,6 +438,13 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
     ["", "Use codex CLI's own default"],
     ["gpt-5.5", "GPT-5.5"],
     ["gpt-5.4-mini", "GPT-5.4-Mini"]
+  ]);
+  assert.equal(elements.reasoning.value, "high");
+  assert.deepEqual(elements.reasoning.children.map((option) => [option.value, option.textContent]), [
+    ["", "Use codex CLI's default (medium)"],
+    ["low", "low"],
+    ["medium", "medium"],
+    ["high", "high"]
   ]);
 }
 
@@ -438,6 +466,14 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
   assert.deepEqual(elements.model.children.map((option) => [option.value, option.textContent]), [
     ["", "Use codex CLI's own default"]
   ]);
+  assert.equal(elements.reasoning.value, "");
+  assert.deepEqual(elements.reasoning.children.map((option) => [option.value, option.textContent]), [
+    ["", "Use codex CLI's default"],
+    ["low", "low"],
+    ["medium", "medium"],
+    ["high", "high"],
+    ["xhigh", "xhigh"]
+  ]);
   assert.equal(elements["native-bridge-status"].textContent, "Select this provider again or Save to load Codex models.");
   assert.equal(elements["native-bridge-status"].classList.contains("error-text"), false);
 }
@@ -445,8 +481,8 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
 {
   const { elements, chrome } = await importOptions({
     nativeModels: [
-      { slug: "gpt-5.5", displayName: "GPT-5.5" },
-      { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini" }
+      { slug: "gpt-5.5", displayName: "GPT-5.5", supportedReasoningLevels: ["low", "medium", "high", "xhigh"], defaultReasoningLevel: "xhigh" },
+      { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini", supportedReasoningLevels: ["low", "medium"], defaultReasoningLevel: "medium" }
     ]
   });
   elements.provider.value = "local-codex-cli";
@@ -461,8 +497,38 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
     ["gpt-5.5", "GPT-5.5"],
     ["gpt-5.4-mini", "GPT-5.4-Mini"]
   ]);
+  assert.equal(elements.reasoning.value, "");
+  assert.deepEqual(elements.reasoning.children.map((option) => [option.value, option.textContent]), [
+    ["", "Use codex CLI's default (xhigh)"],
+    ["low", "low"],
+    ["medium", "medium"],
+    ["high", "high"],
+    ["xhigh", "xhigh"]
+  ]);
+  elements.model.value = "gpt-5.4-mini";
+  await elements.model.dispatch("change");
+  assert.deepEqual(elements.reasoning.children.map((option) => [option.value, option.textContent]), [
+    ["", "Use codex CLI's default (medium)"],
+    ["low", "low"],
+    ["medium", "medium"]
+  ]);
   assert.equal(elements["native-bridge-status"].textContent, "");
   assert.equal(elements["native-bridge-status"].classList.contains("error-text"), false);
+}
+
+{
+  const { elements, chrome } = await importOptions({
+    stored: {
+      provider: "local-claude-cli",
+      codexReasoningEffort: "xhigh",
+      claudeReasoningEffort: "medium"
+    }
+  });
+  elements.provider.value = "local-claude-cli";
+  elements.reasoning.value = "max";
+  await elements["settings-form"].dispatch("submit");
+  assert.equal(chrome.__state.storage.codexReasoningEffort, "xhigh");
+  assert.equal(chrome.__state.storage.claudeReasoningEffort, "max");
 }
 
 {

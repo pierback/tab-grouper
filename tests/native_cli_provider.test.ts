@@ -8,6 +8,7 @@ interface NativeRequest {
   provider?: string;
   timeoutMs?: number;
   model?: string;
+  reasoningEffort?: string;
   tabs: Array<{ url?: string; pageHint?: string; context?: unknown }>;
   existingGroups?: unknown[];
 }
@@ -24,7 +25,12 @@ interface NativeResponse {
   };
   durationMs?: number;
   status?: Record<string, unknown>;
-  models?: Array<{ slug: string; displayName: string }>;
+  models?: Array<{
+    slug: string;
+    displayName: string;
+    supportedReasoningLevels?: string[];
+    defaultReasoningLevel?: string;
+  }>;
 }
 
 interface CreateChromeConfig {
@@ -157,6 +163,7 @@ const tabs = [
     assert.deepEqual(chrome.__state.hostNames, [NATIVE_HOST_NAME]);
     assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
     assert.equal(Object.hasOwn(chrome.__state.sentMessages[0]!, "model"), false);
+    assert.equal(Object.hasOwn(chrome.__state.sentMessages[0]!, "reasoningEffort"), false);
     assert.equal(chrome.__state.sentMessages[0]!.timeoutMs, 4000);
     assert.equal(chrome.__state.sentMessages[0]!.tabs[0]!.url, undefined);
     assert.equal(chrome.__state.sentMessages[0]!.tabs[0]!.pageHint, undefined);
@@ -215,10 +222,12 @@ const tabs = [
     minimumGroupSize: 2,
     includeFullUrls: false,
     includePageHints: false,
-    codexCliModel: "gpt-5.5-codex"
+    codexCliModel: "gpt-5.5-codex",
+    codexReasoningEffort: "high"
   }, "codex");
 
   assert.equal(chrome.__state.sentMessages[0]!.model, "gpt-5.5-codex");
+  assert.equal(chrome.__state.sentMessages[0]!.reasoningEffort, "high");
 }
 
 {
@@ -242,10 +251,12 @@ const tabs = [
     minimumGroupSize: 2,
     includeFullUrls: false,
     includePageHints: false,
-    claudeCliModel: "claude-opus-test"
+    claudeCliModel: "claude-opus-test",
+    claudeReasoningEffort: "max"
   }, "claude");
 
   assert.equal(chrome.__state.sentMessages[0]!.model, "claude-opus-test");
+  assert.equal(chrome.__state.sentMessages[0]!.reasoningEffort, "max");
 }
 
 {
@@ -321,8 +332,8 @@ const tabs = [
         ok: true,
         provider: "local-codex-cli",
         models: [
-          { slug: "gpt-5.5", displayName: "GPT-5.5" },
-          { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini" }
+          { slug: "gpt-5.5", displayName: "GPT-5.5", supportedReasoningLevels: ["low", "medium", "high", "xhigh"], defaultReasoningLevel: "xhigh" },
+          { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini", supportedReasoningLevels: ["low", "medium", "high", "xhigh"], defaultReasoningLevel: "medium" }
         ]
       };
     }
@@ -331,8 +342,8 @@ const tabs = [
 
   const models = await listNativeModels("local-codex-cli");
   assert.deepEqual(models, [
-    { slug: "gpt-5.5", displayName: "GPT-5.5" },
-    { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini" }
+    { slug: "gpt-5.5", displayName: "GPT-5.5", supportedReasoningLevels: ["low", "medium", "high", "xhigh"], defaultReasoningLevel: "xhigh" },
+    { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini", supportedReasoningLevels: ["low", "medium", "high", "xhigh"], defaultReasoningLevel: "medium" }
   ]);
   assert.equal(chrome.__state.sentMessages[0]!.type, "NATIVE_HOST_LIST_MODELS_REQUEST");
   assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");

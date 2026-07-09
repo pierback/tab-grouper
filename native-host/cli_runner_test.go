@@ -36,10 +36,13 @@ func TestCLIRunnerBuildsCodexExecCommand(t *testing.T) {
 	if !slices.Equal(spec.Args[:3], []string{"--ask-for-approval", "never", "exec"}) {
 		t.Fatalf("codex approval args must precede exec subcommand: %#v", spec.Args)
 	}
-	for _, expected := range []string{"exec", "--sandbox", "read-only", "--ask-for-approval", "never", "--skip-git-repo-check", "--ephemeral", "--ignore-rules", "--json", "-c", `model_reasoning_effort="low"`, "--output-schema", "--output-last-message", "-"} {
+	for _, expected := range []string{"exec", "--sandbox", "read-only", "--ask-for-approval", "never", "--skip-git-repo-check", "--ephemeral", "--ignore-rules", "--json", "--output-schema", "--output-last-message", "-"} {
 		if !slices.Contains(spec.Args, expected) {
 			t.Fatalf("codex args missing %q: %#v", expected, spec.Args)
 		}
+	}
+	if slices.Contains(spec.Args, "-c") || slices.Contains(spec.Args, `model_reasoning_effort="low"`) {
+		t.Fatalf("codex reasoning flag should be omitted when reasoning effort is empty: %#v", spec.Args)
 	}
 	if spec.Args[len(spec.Args)-1] != "-" {
 		t.Fatalf("codex prompt should be read from stdin: %#v", spec.Args)
@@ -157,10 +160,13 @@ func TestCLIRunnerBuildsClaudePrintCommand(t *testing.T) {
 	if spec.Executable != "claude-test" {
 		t.Fatalf("unexpected executable: %s", spec.Executable)
 	}
-	for _, expected := range []string{"--print", "--input-format", "text", "--output-format", "json", "--permission-mode", "dontAsk", "--tools", "", "--effort", "low", "--safe-mode", "--no-session-persistence", "--no-chrome", "--json-schema"} {
+	for _, expected := range []string{"--print", "--input-format", "text", "--output-format", "json", "--permission-mode", "dontAsk", "--tools", "", "--safe-mode", "--no-session-persistence", "--no-chrome", "--json-schema"} {
 		if !slices.Contains(spec.Args, expected) {
 			t.Fatalf("claude args missing %q: %#v", expected, spec.Args)
 		}
+	}
+	if slices.Contains(spec.Args, "--effort") || slices.Contains(spec.Args, "low") {
+		t.Fatalf("claude effort flag should be omitted when reasoning effort is empty: %#v", spec.Args)
 	}
 	if slices.Contains(spec.Args, "--model") {
 		t.Fatalf("claude model flag should be omitted when model is empty: %#v", spec.Args)
@@ -264,6 +270,48 @@ func TestCLIRunnerMapsClaudeEnvelopeErrorEvenOnNonzeroExit(t *testing.T) {
 	}
 }
 
+func TestCLIRunnerAddsReasoningEffortFlags(t *testing.T) {
+	codexRequest := validRequest()
+	codexRequest.ReasoningEffort = "high"
+	codexCommands := &recordingCommandRunner{
+		writeCodexOutput: `{"groups":[{"name":"Codex GitHub","color":"blue","tabIds":[1,2]}]}`,
+	}
+	codexRunner := CLIRunner{
+		Commands:         codexCommands,
+		CodexExecutable:  "codex-test",
+		ClaudeExecutable: "claude-test",
+	}
+	if _, err := codexRunner.Run(context.Background(), codexRequest, "group these tabs"); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	codexArgs := codexCommands.lastSpec(t).Args
+	codexReasoningIndex := slices.Index(codexArgs, "-c")
+	if codexReasoningIndex < 0 || codexReasoningIndex+1 >= len(codexArgs) || codexArgs[codexReasoningIndex+1] != `model_reasoning_effort="high"` {
+		t.Fatalf("codex reasoning flag missing: %#v", codexArgs)
+	}
+
+	claudeRequest := validRequest()
+	claudeRequest.Provider = "claude"
+	claudeRequest.ReasoningEffort = "high"
+	claudeEnvelope := `{"type":"result","subtype":"success","is_error":false,"structured_output":{"groups":[{"name":"Docs","color":"green","tabIds":[1,2]}],"assignments":[]}}`
+	claudeCommands := &recordingCommandRunner{
+		result: CommandResult{Stdout: claudeEnvelope},
+	}
+	claudeRunner := CLIRunner{
+		Commands:         claudeCommands,
+		CodexExecutable:  "codex-test",
+		ClaudeExecutable: "claude-test",
+	}
+	if _, err := claudeRunner.Run(context.Background(), claudeRequest, "group these tabs"); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	claudeArgs := claudeCommands.lastSpec(t).Args
+	claudeReasoningIndex := slices.Index(claudeArgs, "--effort")
+	if claudeReasoningIndex < 0 || claudeReasoningIndex+1 >= len(claudeArgs) || claudeArgs[claudeReasoningIndex+1] != "high" {
+		t.Fatalf("claude effort flag missing: %#v", claudeArgs)
+	}
+}
+
 func TestCLIRunnerAddsModelFlags(t *testing.T) {
 	codexRequest := validRequest()
 	codexRequest.Model = "gpt-5.5-codex"
@@ -308,7 +356,7 @@ func TestCLIRunnerAddsModelFlags(t *testing.T) {
 
 func TestCLIRunnerListModelsParsesVisibleCodexModels(t *testing.T) {
 	commands := &recordingCommandRunner{
-		result: CommandResult{Stdout: `{"models":[{"slug":"gpt-5.5","display_name":"GPT-5.5","visibility":"list","base_instructions":"large value omitted"},{"slug":"codex-auto-review","display_name":"Auto Review","visibility":"hide"},{"slug":"gpt-5.4-mini","display_name":"GPT-5.4-Mini","visibility":"list"}]}`},
+		result: CommandResult{Stdout: `{"models":[{"slug":"gpt-5.5","display_name":"GPT-5.5","visibility":"list","base_instructions":"large value omitted","supported_reasoning_levels":[{"effort":"low","description":"fast"},{"effort":"medium","description":"balanced"},{"effort":"high","description":"deep"},{"effort":"xhigh","description":"deeper"}],"default_reasoning_level":"xhigh"},{"slug":"codex-auto-review","display_name":"Auto Review","visibility":"hide"},{"slug":"gpt-5.4-mini","display_name":"GPT-5.4-Mini","visibility":"list","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}],"default_reasoning_level":"medium"}]}`},
 	}
 	runner := CLIRunner{
 		Commands:        commands,
@@ -324,11 +372,16 @@ func TestCLIRunnerListModelsParsesVisibleCodexModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels failed: %v", err)
 	}
-	if !slices.Equal(models, []ModelInfo{
-		{Slug: "gpt-5.5", DisplayName: "GPT-5.5"},
-		{Slug: "gpt-5.4-mini", DisplayName: "GPT-5.4-Mini"},
-	}) {
+	if len(models) != 2 {
 		t.Fatalf("unexpected models: %#v", models)
+	}
+	if models[0].Slug != "gpt-5.5" || models[0].DisplayName != "GPT-5.5" || models[0].DefaultReasoningLevel != "xhigh" ||
+		!slices.Equal(models[0].SupportedReasoningLevels, []string{"low", "medium", "high", "xhigh"}) {
+		t.Fatalf("unexpected first model: %#v", models[0])
+	}
+	if models[1].Slug != "gpt-5.4-mini" || models[1].DisplayName != "GPT-5.4-Mini" || models[1].DefaultReasoningLevel != "medium" ||
+		!slices.Equal(models[1].SupportedReasoningLevels, []string{"low", "medium", "high", "xhigh"}) {
+		t.Fatalf("unexpected second model: %#v", models[1])
 	}
 
 	spec := commands.lastSpec(t)

@@ -4,6 +4,8 @@ import type { Settings } from "../src/lib/types.js";
 
 interface TestStorageState extends Partial<Record<keyof Settings, unknown>> {
   codexCliModel?: string;
+  codexReasoningEffort?: string;
+  claudeReasoningEffort?: string;
   [key: string]: unknown;
 }
 
@@ -15,6 +17,8 @@ const normalized = normalizeSettings({
   anthropicModel: "x".repeat(120),
   codexCliModel: " codex-model ",
   claudeCliModel: "",
+  codexReasoningEffort: " high ",
+  claudeReasoningEffort: "x".repeat(40),
   includeFullUrls: "true",
   includePageHints: "true",
   allowHeuristicFallback: false,
@@ -31,6 +35,8 @@ assert.equal(normalized.anthropicApiKey, "sk-ant-test");
 assert.equal(normalized.anthropicModel.length, 80);
 assert.equal(normalized.codexCliModel, "codex-model");
 assert.equal(normalized.claudeCliModel, "");
+assert.equal(normalized.codexReasoningEffort, "high");
+assert.equal(normalized.claudeReasoningEffort.length, 16);
 assert.equal(normalized.includeFullUrls, false);
 assert.equal(normalized.includePageHints, false);
 assert.equal(normalized.allowHeuristicFallback, false);
@@ -56,6 +62,8 @@ assert.deepEqual(
     anthropicModel: DEFAULT_SETTINGS.anthropicModel,
     codexCliModel: "",
     claudeCliModel: "",
+    codexReasoningEffort: "",
+    claudeReasoningEffort: "",
     includeFullUrls: true,
     includePageHints: true,
     allowHeuristicFallback: false,
@@ -104,7 +112,9 @@ await saveSettings({
   allowHeuristicFallback: false,
   openaiApiKey: " key ",
   codexCliModel: "x".repeat(120),
-  claudeCliModel: " "
+  claudeCliModel: " ",
+  codexReasoningEffort: "x".repeat(40),
+  claudeReasoningEffort: " "
 });
 
 assert.equal(storageState.provider, "local-codex-cli");
@@ -115,5 +125,7 @@ assert.equal(storageState.allowHeuristicFallback, false);
 assert.equal(storageState.openaiApiKey, "key");
 assert.equal(storageState.codexCliModel!.length, 80);
 assert.equal(storageState.claudeCliModel, "");
+assert.equal(storageState.codexReasoningEffort!.length, 16);
+assert.equal(storageState.claudeReasoningEffort, "");
 
 console.log("Settings tests passed.");

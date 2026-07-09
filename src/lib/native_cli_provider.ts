@@ -42,6 +42,7 @@ interface NativePlanRequest {
     context?: PromptTabRecord["context"];
   }>;
   model?: string;
+  reasoningEffort?: string;
 }
 
 interface NativeStatusRequest {
@@ -119,6 +120,10 @@ export async function createPlanWithNativeCli(
   const model = cliProvider === "codex" ? settings.codexCliModel : settings.claudeCliModel;
   if (model) {
     request.model = model;
+  }
+  const reasoningEffort = cliProvider === "codex" ? settings.codexReasoningEffort : settings.claudeReasoningEffort;
+  if (reasoningEffort) {
+    request.reasoningEffort = reasoningEffort;
   }
 
   const response = await sendNativeRequest(request, timeoutMs);

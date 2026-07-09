@@ -166,9 +166,13 @@ func (runner CLIRunner) Run(ctx context.Context, request Request, prompt string)
 func parseCodexModels(output string) ([]ModelInfo, error) {
 	var payload struct {
 		Models []struct {
-			Slug        string `json:"slug"`
-			DisplayName string `json:"display_name"`
-			Visibility  string `json:"visibility"`
+			Slug                     string `json:"slug"`
+			DisplayName              string `json:"display_name"`
+			Visibility               string `json:"visibility"`
+			SupportedReasoningLevels []struct {
+				Effort string `json:"effort"`
+			} `json:"supported_reasoning_levels"`
+			DefaultReasoningLevel string `json:"default_reasoning_level"`
 		} `json:"models"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &payload); err != nil {
@@ -187,9 +191,17 @@ func parseCodexModels(output string) ([]ModelInfo, error) {
 		if displayName == "" {
 			displayName = model.Slug
 		}
+		supportedReasoningLevels := []string{}
+		for _, level := range model.SupportedReasoningLevels {
+			if level.Effort != "" {
+				supportedReasoningLevels = append(supportedReasoningLevels, level.Effort)
+			}
+		}
 		models = append(models, ModelInfo{
-			Slug:        model.Slug,
-			DisplayName: displayName,
+			Slug:                     model.Slug,
+			DisplayName:              displayName,
+			SupportedReasoningLevels: supportedReasoningLevels,
+			DefaultReasoningLevel:    model.DefaultReasoningLevel,
 		})
 	}
 	return models, nil
@@ -214,10 +226,12 @@ func (runner CLIRunner) buildCommandSpec(request Request, prompt string, tempDir
 			"--ignore-rules",
 			"--color", "never",
 			"--json",
-			"-c", "model_reasoning_effort=\"low\"",
 			"--cd", tempDir,
 			"--output-schema", schemaPath,
 			"--output-last-message", outputPath,
+		}
+		if request.ReasoningEffort != "" {
+			args = append(args, "-c", "model_reasoning_effort=\""+request.ReasoningEffort+"\"")
 		}
 		if request.Model != "" {
 			args = append(args, "-m", request.Model)
@@ -242,11 +256,13 @@ func (runner CLIRunner) buildCommandSpec(request Request, prompt string, tempDir
 			"--output-format", "json",
 			"--permission-mode", "dontAsk",
 			"--tools", "",
-			"--effort", "low",
 			"--safe-mode",
 			"--no-session-persistence",
 			"--no-chrome",
 			"--json-schema", planSchemaJSON,
+		}
+		if request.ReasoningEffort != "" {
+			args = append(args, "--effort", request.ReasoningEffort)
 		}
 		if request.Model != "" {
 			args = append(args, "--model", request.Model)

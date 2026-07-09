@@ -13,6 +13,8 @@ export type LocalCliProvider = "codex" | "claude";
 export interface NativeModelInfo {
   slug: string;
   displayName: string;
+  supportedReasoningLevels?: string[];
+  defaultReasoningLevel?: string;
 }
 
 export interface Settings {
@@ -23,6 +25,8 @@ export interface Settings {
   anthropicModel: string;
   codexCliModel: string;
   claudeCliModel: string;
+  codexReasoningEffort: string;
+  claudeReasoningEffort: string;
   includeFullUrls: boolean;
   includePageHints: boolean;
   allowHeuristicFallback: boolean;

@@ -50,6 +50,7 @@ type Request struct {
 	RequestID        string          `json:"requestId"`
 	Provider         string          `json:"provider,omitempty"`
 	Model            string          `json:"model,omitempty"`
+	ReasoningEffort  string          `json:"reasoningEffort,omitempty"`
 	TimeoutMS        int             `json:"timeoutMs,omitempty"`
 	MinimumGroupSize int             `json:"minimumGroupSize,omitempty"`
 	IncludeFullURLs  bool            `json:"includeFullUrls,omitempty"`
@@ -111,8 +112,10 @@ type Status struct {
 }
 
 type ModelInfo struct {
-	Slug        string `json:"slug"`
-	DisplayName string `json:"displayName"`
+	Slug                     string   `json:"slug"`
+	DisplayName              string   `json:"displayName"`
+	SupportedReasoningLevels []string `json:"supportedReasoningLevels,omitempty"`
+	DefaultReasoningLevel    string   `json:"defaultReasoningLevel,omitempty"`
 }
 
 type ResponseError struct {
@@ -185,6 +188,9 @@ func ValidateRequest(request Request) error {
 		}
 		return nil
 	}
+	if !isAllowedReasoningEffort(request.Provider, request.ReasoningEffort) {
+		return errors.New("invalid reasoning effort")
+	}
 	if request.MinimumGroupSize < 2 || request.MinimumGroupSize > 10 {
 		return errors.New("invalid minimum group size")
 	}
@@ -232,6 +238,20 @@ func ValidateRequest(request Request) error {
 		}
 	}
 	return nil
+}
+
+func isAllowedReasoningEffort(provider string, effort string) bool {
+	if effort == "" {
+		return true
+	}
+	switch provider {
+	case "codex":
+		return effort == "low" || effort == "medium" || effort == "high" || effort == "xhigh"
+	case "claude":
+		return effort == "low" || effort == "medium" || effort == "high" || effort == "xhigh" || effort == "max"
+	default:
+		return false
+	}
 }
 
 func validateTabContext(context *TabContext) error {

@@ -50,6 +50,37 @@ func TestValidateRequestRejectsOversizedModel(t *testing.T) {
 	}
 }
 
+func TestValidateRequestValidatesReasoningEffort(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider string
+		effort   string
+		wantErr  bool
+	}{
+		{name: "codex empty", provider: "codex", effort: "", wantErr: false},
+		{name: "codex high", provider: "codex", effort: "high", wantErr: false},
+		{name: "codex max", provider: "codex", effort: "max", wantErr: true},
+		{name: "codex invalid", provider: "codex", effort: `high"; --danger`, wantErr: true},
+		{name: "claude max", provider: "claude", effort: "max", wantErr: false},
+		{name: "claude invalid", provider: "claude", effort: "ultra", wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := validRequest()
+			request.Provider = test.provider
+			request.ReasoningEffort = test.effort
+			err := ValidateRequest(request)
+			if test.wantErr && err == nil {
+				t.Fatal("expected reasoning effort validation to fail")
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("expected reasoning effort to validate: %v", err)
+			}
+		})
+	}
+}
+
 func TestValidateRequestRejectsDuplicateTabIds(t *testing.T) {
 	request := validRequest()
 	request.Tabs = append(request.Tabs, request.Tabs[0])
