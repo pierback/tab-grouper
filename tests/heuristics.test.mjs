@@ -15,6 +15,7 @@ const repoPlan = groupTabsHeuristically(
 assert.deepEqual(repoPlan.groups, [
   { name: "Codex GitHub", color: "blue", tabIds: [1, 2] }
 ]);
+assert.equal(typeof repoPlan.timing.durationMs, "number");
 
 const conservativePlan = groupTabsHeuristically(
   [

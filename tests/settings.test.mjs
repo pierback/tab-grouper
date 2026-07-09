@@ -7,6 +7,8 @@ const normalized = normalizeSettings({
   openaiModel: "",
   anthropicApiKey: "  sk-ant-test  ",
   anthropicModel: "x".repeat(120),
+  codexCliModel: " codex-model ",
+  claudeCliModel: "",
   includeFullUrls: "true",
   includePageHints: "true",
   allowHeuristicFallback: false,
@@ -21,6 +23,8 @@ assert.equal(normalized.openaiApiKey, "");
 assert.equal(normalized.openaiModel, DEFAULT_SETTINGS.openaiModel);
 assert.equal(normalized.anthropicApiKey, "sk-ant-test");
 assert.equal(normalized.anthropicModel.length, 80);
+assert.equal(normalized.codexCliModel, "codex-model");
+assert.equal(normalized.claudeCliModel, "");
 assert.equal(normalized.includeFullUrls, false);
 assert.equal(normalized.includePageHints, false);
 assert.equal(normalized.allowHeuristicFallback, false);
@@ -44,6 +48,8 @@ assert.deepEqual(
     provider: "anthropic",
     openaiModel: DEFAULT_SETTINGS.openaiModel,
     anthropicModel: DEFAULT_SETTINGS.anthropicModel,
+    codexCliModel: "",
+    claudeCliModel: "",
     includeFullUrls: true,
     includePageHints: true,
     allowHeuristicFallback: false,
@@ -81,6 +87,7 @@ assert.equal((await getSettings()).provider, "heuristic");
 assert.equal((await getSettings()).minimumGroupSize, 2);
 assert.equal((await getSettings()).includeFullUrls, false);
 assert.equal((await getSettings()).allowHeuristicFallback, true);
+assert.equal((await getSettings()).codexCliModel, "");
 
 await saveSettings({
   provider: "local-codex-cli",
@@ -88,7 +95,9 @@ await saveSettings({
   includeFullUrls: "yes",
   includePageHints: true,
   allowHeuristicFallback: false,
-  openaiApiKey: " key "
+  openaiApiKey: " key ",
+  codexCliModel: "x".repeat(120),
+  claudeCliModel: " "
 });
 
 assert.equal(storageState.provider, "local-codex-cli");
@@ -97,5 +106,7 @@ assert.equal(storageState.includeFullUrls, false);
 assert.equal(storageState.includePageHints, true);
 assert.equal(storageState.allowHeuristicFallback, false);
 assert.equal(storageState.openaiApiKey, "key");
+assert.equal(storageState.codexCliModel.length, 80);
+assert.equal(storageState.claudeCliModel, "");
 
 console.log("Settings tests passed.");

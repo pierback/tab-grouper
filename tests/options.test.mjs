@@ -55,6 +55,8 @@ function createFakeElements() {
     ["openaiModel", "text", "gpt-5.4-mini"],
     ["anthropicApiKey", "text", ""],
     ["anthropicModel", "text", "claude-sonnet-4-6-20260217"],
+    ["codexCliModel", "text", ""],
+    ["claudeCliModel", "text", ""],
     ["includeFullUrls", "checkbox", false],
     ["includePageHints", "checkbox", false],
     ["allowHeuristicFallback", "checkbox", true],
@@ -261,12 +263,28 @@ function createFakeChrome({ permissionGrant, stored, nativeStatus }) {
 {
   const { elements, chrome } = await importOptions();
   elements.provider.value = "local-codex-cli";
+  elements.codexCliModel.value = " gpt-5.5-codex ";
+  elements.claudeCliModel.value = " claude-opus-test ";
   elements.allowHeuristicFallback.checked = false;
   await elements["settings-form"].dispatch("submit");
   assert.deepEqual(chrome.__state.permissionRequests, [{ permissions: ["nativeMessaging"] }]);
   assert.deepEqual(chrome.__state.permissionRemovals, [{ origins: ["https://api.openai.com/*", "https://api.anthropic.com/*"] }]);
   assert.equal(chrome.__state.storage.provider, "local-codex-cli");
+  assert.equal(chrome.__state.storage.codexCliModel, "gpt-5.5-codex");
+  assert.equal(chrome.__state.storage.claudeCliModel, "claude-opus-test");
   assert.equal(chrome.__state.storage.allowHeuristicFallback, false);
+}
+
+{
+  const { elements } = await importOptions({
+    stored: {
+      provider: "local-claude-cli",
+      codexCliModel: "codex-stored",
+      claudeCliModel: "claude-stored"
+    }
+  });
+  assert.equal(elements.codexCliModel.value, "codex-stored");
+  assert.equal(elements.claudeCliModel.value, "claude-stored");
 }
 
 {

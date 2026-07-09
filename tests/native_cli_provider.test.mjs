@@ -95,8 +95,10 @@ const tabs = [
         requestId: message.requestId,
         ok: true,
         provider: "local-codex-cli",
+        durationMs: 321,
         plan: {
-          groups: [{ name: "Codex GitHub", color: "blue", tabIds: [1, 2] }]
+          groups: [{ name: "Codex GitHub", color: "blue", tabIds: [1, 2] }],
+          usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.0123 }
         }
       };
     }
@@ -112,8 +114,10 @@ const tabs = [
     }, "codex");
 
     assert.deepEqual(plan.groups, [{ name: "Codex GitHub", color: "blue", tabIds: [1, 2] }]);
+    assert.deepEqual(plan.timing, { durationMs: 321, inputTokens: 10, outputTokens: 5, costUsd: 0.0123 });
     assert.deepEqual(chrome.__state.hostNames, [NATIVE_HOST_NAME]);
     assert.equal(chrome.__state.sentMessages[0].provider, "codex");
+    assert.equal(Object.hasOwn(chrome.__state.sentMessages[0], "model"), false);
     assert.equal(chrome.__state.sentMessages[0].timeoutMs, 4000);
     assert.equal(chrome.__state.sentMessages[0].tabs[0].url, undefined);
     assert.equal(chrome.__state.sentMessages[0].tabs[0].pageHint, undefined);
@@ -149,6 +153,60 @@ const tabs = [
 
   assert.equal(chrome.__state.sentMessages[0].tabs[0].pageHint, "Title: Issue");
   assert.deepEqual(chrome.__state.sentMessages[0].tabs[0].context, tabs[0].context);
+}
+
+{
+  const chrome = createChrome({
+    nativeResponse(message) {
+      return {
+        version: 1,
+        type: "TAB_GROUP_PLAN_RESPONSE",
+        requestId: message.requestId,
+        ok: true,
+        provider: "local-codex-cli",
+        plan: {
+          groups: [{ name: "Codex GitHub", color: "blue", tabIds: [1, 2] }]
+        }
+      };
+    }
+  });
+  globalThis.chrome = chrome;
+
+  await createPlanWithNativeCli(tabs, {
+    minimumGroupSize: 2,
+    includeFullUrls: false,
+    includePageHints: false,
+    codexCliModel: "gpt-5.5-codex"
+  }, "codex");
+
+  assert.equal(chrome.__state.sentMessages[0].model, "gpt-5.5-codex");
+}
+
+{
+  const chrome = createChrome({
+    nativeResponse(message) {
+      return {
+        version: 1,
+        type: "TAB_GROUP_PLAN_RESPONSE",
+        requestId: message.requestId,
+        ok: true,
+        provider: "local-claude-cli",
+        plan: {
+          groups: [{ name: "Claude GitHub", color: "purple", tabIds: [1, 2] }]
+        }
+      };
+    }
+  });
+  globalThis.chrome = chrome;
+
+  await createPlanWithNativeCli(tabs, {
+    minimumGroupSize: 2,
+    includeFullUrls: false,
+    includePageHints: false,
+    claudeCliModel: "claude-opus-test"
+  }, "claude");
+
+  assert.equal(chrome.__state.sentMessages[0].model, "claude-opus-test");
 }
 
 {

@@ -44,6 +44,9 @@ func TestCLIRunnerBuildsCodexExecCommand(t *testing.T) {
 	if spec.Args[len(spec.Args)-1] != "-" {
 		t.Fatalf("codex prompt should be read from stdin: %#v", spec.Args)
 	}
+	if slices.Contains(spec.Args, "-m") {
+		t.Fatalf("codex model flag should be omitted when model is empty: %#v", spec.Args)
+	}
 	if spec.Stdin != "group these tabs" {
 		t.Fatalf("prompt was not sent on stdin")
 	}
@@ -102,13 +105,36 @@ func TestCLIRunnerParsesCodexPlanWithBenignJSONLEvents(t *testing.T) {
 	if len(plan.Groups) != 1 || plan.Groups[0].Name != "Docs" {
 		t.Fatalf("unexpected plan: %#v", plan)
 	}
+	if plan.Usage == nil || plan.Usage.InputTokens != 1 || plan.Usage.OutputTokens != 1 {
+		t.Fatalf("unexpected usage: %#v", plan.Usage)
+	}
 }
 
 func TestCLIRunnerBuildsClaudePrintCommand(t *testing.T) {
 	request := validRequest()
 	request.Provider = "claude"
+	cost := 0.0123
+	envelope, err := json.Marshal(map[string]any{
+		"type":           "result",
+		"subtype":        "success",
+		"is_error":       false,
+		"total_cost_usd": cost,
+		"usage": map[string]any{
+			"input_tokens":  10,
+			"output_tokens": 5,
+		},
+		"structured_output": map[string]any{
+			"groups": []map[string]any{
+				{"name": "Docs", "color": "green", "tabIds": []int{1, 2}},
+			},
+			"assignments": []any{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
 	commands := &recordingCommandRunner{
-		result: CommandResult{Stdout: "```json\n{\"groups\":[{\"name\":\"Docs\",\"color\":\"green\",\"tabIds\":[1,2]}]}\n```"},
+		result: CommandResult{Stdout: string(envelope)},
 	}
 	runner := CLIRunner{
 		Commands:         commands,
@@ -123,15 +149,160 @@ func TestCLIRunnerBuildsClaudePrintCommand(t *testing.T) {
 	if len(plan.Groups) != 1 || plan.Groups[0].Name != "Docs" {
 		t.Fatalf("unexpected plan: %#v", plan)
 	}
+	if plan.Usage == nil || plan.Usage.InputTokens != 10 || plan.Usage.OutputTokens != 5 || plan.Usage.CostUsd == nil || *plan.Usage.CostUsd != cost {
+		t.Fatalf("unexpected usage: %#v", plan.Usage)
+	}
 
 	spec := commands.lastSpec(t)
 	if spec.Executable != "claude-test" {
 		t.Fatalf("unexpected executable: %s", spec.Executable)
 	}
-	for _, expected := range []string{"--print", "--input-format", "text", "--output-format", "--permission-mode", "dontAsk", "--tools", "", "--effort", "low", "--safe-mode", "--no-session-persistence", "--no-chrome", "--json-schema"} {
+	for _, expected := range []string{"--print", "--input-format", "text", "--output-format", "json", "--permission-mode", "dontAsk", "--tools", "", "--effort", "low", "--safe-mode", "--no-session-persistence", "--no-chrome", "--json-schema"} {
 		if !slices.Contains(spec.Args, expected) {
 			t.Fatalf("claude args missing %q: %#v", expected, spec.Args)
 		}
+	}
+	if slices.Contains(spec.Args, "--model") {
+		t.Fatalf("claude model flag should be omitted when model is empty: %#v", spec.Args)
+	}
+}
+
+func TestCLIRunnerParsesClaudeEnvelopeResultFallback(t *testing.T) {
+	request := validRequest()
+	request.Provider = "claude"
+	envelope, err := json.Marshal(map[string]any{
+		"type":              "result",
+		"subtype":           "success",
+		"is_error":          false,
+		"result":            "{\"groups\":[{\"name\":\"Docs\",\"color\":\"green\",\"tabIds\":[1,2]}],\"assignments\":[]}",
+		"structured_output": nil,
+		"usage": map[string]any{
+			"input_tokens":  20,
+			"output_tokens": 7,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	commands := &recordingCommandRunner{
+		result: CommandResult{Stdout: string(envelope)},
+	}
+	runner := CLIRunner{
+		Commands:         commands,
+		CodexExecutable:  "codex-test",
+		ClaudeExecutable: "claude-test",
+	}
+
+	plan, err := runner.Run(context.Background(), request, "group these tabs")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if len(plan.Groups) != 1 || plan.Groups[0].Name != "Docs" {
+		t.Fatalf("unexpected plan: %#v", plan)
+	}
+	if plan.Usage == nil || plan.Usage.InputTokens != 20 || plan.Usage.OutputTokens != 7 {
+		t.Fatalf("unexpected usage: %#v", plan.Usage)
+	}
+}
+
+func TestCLIRunnerMapsClaudeEnvelopeError(t *testing.T) {
+	request := validRequest()
+	request.Provider = "claude"
+	envelope, err := json.Marshal(map[string]any{
+		"type":     "result",
+		"subtype":  "error",
+		"is_error": true,
+		"result":   "authentication required",
+	})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	commands := &recordingCommandRunner{
+		result: CommandResult{Stdout: string(envelope)},
+	}
+	runner := CLIRunner{
+		Commands:         commands,
+		CodexExecutable:  "codex-test",
+		ClaudeExecutable: "claude-test",
+	}
+
+	_, err = runner.Run(context.Background(), request, "group these tabs")
+	assertBridgeErrorKind(t, err, "cli-auth-missing")
+}
+
+func TestCLIRunnerMapsClaudeEnvelopeErrorEvenOnNonzeroExit(t *testing.T) {
+	// The real claude CLI exits nonzero (verified empirically: exit status 1)
+	// on an application-level error such as an invalid --model, while still
+	// printing a complete, valid is_error:true envelope on stdout with a
+	// specific, useful message. The envelope must be trusted over the process
+	// exit status, or this detail is lost behind a generic "claude CLI failed".
+	request := validRequest()
+	request.Provider = "claude"
+	envelope, err := json.Marshal(map[string]any{
+		"type":     "result",
+		"subtype":  "success",
+		"is_error": true,
+		"result":   "There's an issue with the selected model (totally-bogus-model-name-xyz). It may not exist or you may not have access to it.",
+	})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	commands := &recordingCommandRunner{
+		result: CommandResult{Stdout: string(envelope)},
+		err:    errors.New("exit status 1"),
+	}
+	runner := CLIRunner{
+		Commands:         commands,
+		CodexExecutable:  "codex-test",
+		ClaudeExecutable: "claude-test",
+	}
+
+	_, err = runner.Run(context.Background(), request, "group these tabs")
+	assertBridgeErrorKind(t, err, "cli-error")
+	if !strings.Contains(err.Error(), "totally-bogus-model-name-xyz") {
+		t.Fatalf("expected the specific claude error message to survive, got: %v", err)
+	}
+}
+
+func TestCLIRunnerAddsModelFlags(t *testing.T) {
+	codexRequest := validRequest()
+	codexRequest.Model = "gpt-5.5-codex"
+	codexCommands := &recordingCommandRunner{
+		writeCodexOutput: `{"groups":[{"name":"Codex GitHub","color":"blue","tabIds":[1,2]}]}`,
+	}
+	codexRunner := CLIRunner{
+		Commands:         codexCommands,
+		CodexExecutable:  "codex-test",
+		ClaudeExecutable: "claude-test",
+	}
+	if _, err := codexRunner.Run(context.Background(), codexRequest, "group these tabs"); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	codexArgs := codexCommands.lastSpec(t).Args
+	codexModelIndex := slices.Index(codexArgs, "-m")
+	if codexModelIndex < 0 || codexModelIndex+1 >= len(codexArgs) || codexArgs[codexModelIndex+1] != "gpt-5.5-codex" {
+		t.Fatalf("codex model flag missing: %#v", codexArgs)
+	}
+
+	claudeRequest := validRequest()
+	claudeRequest.Provider = "claude"
+	claudeRequest.Model = "claude-opus-test"
+	claudeEnvelope := `{"type":"result","subtype":"success","is_error":false,"structured_output":{"groups":[{"name":"Docs","color":"green","tabIds":[1,2]}],"assignments":[]}}`
+	claudeCommands := &recordingCommandRunner{
+		result: CommandResult{Stdout: claudeEnvelope},
+	}
+	claudeRunner := CLIRunner{
+		Commands:         claudeCommands,
+		CodexExecutable:  "codex-test",
+		ClaudeExecutable: "claude-test",
+	}
+	if _, err := claudeRunner.Run(context.Background(), claudeRequest, "group these tabs"); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	claudeArgs := claudeCommands.lastSpec(t).Args
+	claudeModelIndex := slices.Index(claudeArgs, "--model")
+	if claudeModelIndex < 0 || claudeModelIndex+1 >= len(claudeArgs) || claudeArgs[claudeModelIndex+1] != "claude-opus-test" {
+		t.Fatalf("claude model flag missing: %#v", claudeArgs)
 	}
 }
 

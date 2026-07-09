@@ -257,12 +257,14 @@ function getStoredSnapshot(chrome, windowId) {
   assert.equal(preview.ok, true);
   assert.equal(preview.preview, true);
   assert.deepEqual(preview.groups, [{ name: "Codex GitHub", color: "blue", count: 2 }]);
+  assert.equal(typeof preview.durationMs, "number");
   assert.equal(chrome.__state.tabs.every((tab) => tab.groupId === -1), true);
 
   const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 1 });
   assert.equal(tidy.ok, true);
   assert.equal(tidy.undoAvailable, true);
   assert.equal(tidy.groupedCount, 2);
+  assert.equal(typeof tidy.durationMs, "number");
   assert.equal(chrome.__state.tabs[0].groupId, chrome.__state.tabs[1].groupId);
   assert.notEqual(chrome.__state.tabs[0].groupId, -1);
   assert.equal(getStoredSnapshot(chrome, 1).changedTabIds.length, 2);
@@ -716,6 +718,52 @@ function getStoredSnapshot(chrome, windowId) {
   const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 14 });
   assert.equal(tidy.ok, true);
   assert.equal(promptCount, 2);
+  globalThis.LanguageModel = originalLanguageModel;
+}
+
+{
+  let promptCount = 0;
+  globalThis.LanguageModel = {
+    async availability() {
+      return "available";
+    },
+    async create() {
+      return {
+        async prompt() {
+          promptCount += 1;
+          return JSON.stringify({
+            groups: [{ name: "Dev Docs", color: "blue", tabIds: [1, 2] }],
+            assignments: []
+          });
+        }
+      };
+    }
+  };
+
+  const chrome = createFakeChrome({
+    tabs: [
+      { id: 1, title: "OpenAI Docs", url: "https://developers.openai.com/api", windowId: 15, index: 0 },
+      { id: 2, title: "Chrome Extensions", url: "https://developer.chrome.com/docs/extensions", windowId: 15, index: 1 }
+    ],
+    storage: {
+      provider: "chrome-ai",
+      codexCliModel: "codex-a",
+      claudeCliModel: "claude-a"
+    }
+  });
+  await importServiceWorker(chrome);
+
+  const firstPreview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 15 });
+  assert.equal(firstPreview.ok, true);
+
+  chrome.__state.storage.codexCliModel = "codex-b";
+  const codexChangedPreview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 15 });
+  assert.equal(codexChangedPreview.ok, true);
+
+  chrome.__state.storage.claudeCliModel = "claude-b";
+  const claudeChangedPreview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 15 });
+  assert.equal(claudeChangedPreview.ok, true);
+  assert.equal(promptCount, 3);
   globalThis.LanguageModel = originalLanguageModel;
 }
 

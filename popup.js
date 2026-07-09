@@ -152,6 +152,7 @@ function renderResult(response) {
   title.className = "result-title";
   title.textContent = response.message || "No groups created.";
   result.append(title);
+  appendProviderMetrics(response);
   appendProviderDetails(response);
 
   if (!response.groups?.length && !response.assignments?.length) {
@@ -171,6 +172,39 @@ function renderResult(response) {
     list.append(item);
   }
   result.append(list);
+}
+
+function appendProviderMetrics(response) {
+  const metricsText = buildProviderMetricsText(response);
+  if (!metricsText) {
+    return;
+  }
+  const metrics = document.createElement("p");
+  metrics.className = "provider-details";
+  metrics.textContent = metricsText;
+  result.append(metrics);
+}
+
+function buildProviderMetricsText(response) {
+  const durationMs = Number(response.durationMs);
+  if (!Number.isFinite(durationMs)) {
+    return "";
+  }
+
+  const parts = [
+    getProviderLabel(response.provider || "heuristic"),
+    `${(durationMs / 1000).toFixed(1)}s`
+  ];
+  const inputTokens = Number(response.inputTokens);
+  const outputTokens = Number(response.outputTokens);
+  if (Number.isFinite(inputTokens) || Number.isFinite(outputTokens)) {
+    parts.push(`~${(Number.isFinite(inputTokens) ? inputTokens : 0) + (Number.isFinite(outputTokens) ? outputTokens : 0)} tokens`);
+  }
+  const costUsd = Number(response.costUsd);
+  if (Number.isFinite(costUsd)) {
+    parts.push(`$${costUsd.toFixed(4)}`);
+  }
+  return parts.join(" · ");
 }
 
 function appendProviderDetails(response) {

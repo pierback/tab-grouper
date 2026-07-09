@@ -48,6 +48,7 @@ type Request struct {
 	Type             string          `json:"type"`
 	RequestID        string          `json:"requestId"`
 	Provider         string          `json:"provider,omitempty"`
+	Model            string          `json:"model,omitempty"`
 	TimeoutMS        int             `json:"timeoutMs,omitempty"`
 	MinimumGroupSize int             `json:"minimumGroupSize,omitempty"`
 	IncludeFullURLs  bool            `json:"includeFullUrls,omitempty"`
@@ -66,6 +67,13 @@ type ExistingGroup struct {
 type Plan struct {
 	Groups      []PlanGroup      `json:"groups"`
 	Assignments []PlanAssignment `json:"assignments,omitempty"`
+	Usage       *Usage           `json:"usage,omitempty"`
+}
+
+type Usage struct {
+	InputTokens  int      `json:"inputTokens,omitempty"`
+	OutputTokens int      `json:"outputTokens,omitempty"`
+	CostUsd      *float64 `json:"costUsd,omitempty"`
 }
 
 type PlanGroup struct {
@@ -157,6 +165,9 @@ func ValidateRequest(request Request) error {
 	}
 	if request.Provider != "codex" && request.Provider != "claude" {
 		return errors.New("invalid provider")
+	}
+	if len(request.Model) > 80 {
+		return errors.New("invalid model")
 	}
 	if request.Type == RequestStatusType {
 		return nil

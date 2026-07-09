@@ -270,4 +270,27 @@ function flushAsyncWork() {
   assert.equal(elements.result.children[1].innerHTML, "AI provider: <strong>OpenAI API</strong>.");
 }
 
+{
+  const { elements } = await importPopup({
+    previewResponse: {
+      ok: true,
+      undoAvailable: false,
+      groups: [{ name: "Dev Docs", color: "green", count: 2 }],
+      message: "Would create 1 group.",
+      provider: "local-claude-cli",
+      usedFallback: false,
+      providerError: "",
+      durationMs: 1250,
+      inputTokens: 100,
+      outputTokens: 23,
+      costUsd: 0.004321
+    }
+  });
+
+  await elements["preview-button"].dispatch("click");
+  assert.equal(elements.result.children[1].textContent, "Local Claude Code CLI · 1.3s · ~123 tokens · $0.0043");
+  assert.equal(elements.result.children[1].innerHTML, "");
+  assert.equal(elements.result.children[2].innerHTML, "AI provider: <strong>Local Claude Code CLI</strong>.");
+}
+
 console.log("Popup tests passed.");

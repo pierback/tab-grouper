@@ -37,6 +37,19 @@ func TestValidateRequestRejectsCommandLikeProvider(t *testing.T) {
 	}
 }
 
+func TestValidateRequestRejectsOversizedModel(t *testing.T) {
+	request := validRequest()
+	request.Model = strings.Repeat("x", 81)
+	if err := ValidateRequest(request); err == nil {
+		t.Fatal("expected oversized model to fail validation")
+	}
+
+	request.Model = strings.Repeat("x", 80)
+	if err := ValidateRequest(request); err != nil {
+		t.Fatalf("expected 80 character model to validate: %v", err)
+	}
+}
+
 func TestValidateRequestRejectsDuplicateTabIds(t *testing.T) {
 	request := validRequest()
 	request.Tabs = append(request.Tabs, request.Tabs[0])

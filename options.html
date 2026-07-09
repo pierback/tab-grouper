@@ -61,6 +61,14 @@
 
         <section class="section provider-section" data-provider-section="local-cli">
           <h2>Local CLI Bridge</h2>
+          <label class="field">
+            <span>Codex model</span>
+            <input id="codexCliModel" name="codexCliModel" type="text" placeholder="Leave blank to use your codex CLI's own default">
+          </label>
+          <label class="field">
+            <span>Claude model</span>
+            <input id="claudeCliModel" name="claudeCliModel" type="text" placeholder="Leave blank to use your claude CLI's own default">
+          </label>
           <p class="helper-text">Check the native host and pinned CLI path without running a model request.</p>
           <button id="test-native-bridge" class="secondary-button" type="button">Test bridge</button>
           <span id="native-bridge-status" class="save-status" aria-live="polite"></span>

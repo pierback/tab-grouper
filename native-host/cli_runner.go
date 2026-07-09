@@ -86,12 +86,21 @@ func (runner CLIRunner) Run(ctx context.Context, request Request, prompt string)
 	}
 
 	result, err := runner.Commands.Run(ctx, spec)
-	if request.Provider == "codex" && codexAttemptedToolUse(result.Stdout) {
-		return Plan{}, BridgeError{
-			Kind: "cli-blocked-tool-use",
-			Err:  errors.New("codex CLI attempted a disallowed action; its response was rejected"),
+	var codexUsage *Usage
+	if request.Provider == "codex" {
+		attemptedToolUse, usage := scanCodexJSONL(result.Stdout)
+		if attemptedToolUse {
+			return Plan{}, BridgeError{
+				Kind: "cli-blocked-tool-use",
+				Err:  errors.New("codex CLI attempted a disallowed action; its response was rejected"),
+			}
 		}
+		codexUsage = usage
 	}
+	if request.Provider == "claude" {
+		return ParseClaudeResultEnvelope(result, err, request)
+	}
+
 	if err != nil {
 		return Plan{}, classifyCLIError(request.Provider, result, err)
 	}
@@ -110,7 +119,14 @@ func (runner CLIRunner) Run(ctx context.Context, request Request, prompt string)
 		}
 	}
 
-	return ParsePlanText(outputText, request)
+	plan, err := ParsePlanText(outputText, request)
+	if err != nil {
+		return Plan{}, err
+	}
+	if codexUsage != nil {
+		plan.Usage = codexUsage
+	}
+	return plan, nil
 }
 
 func (runner CLIRunner) buildCommandSpec(request Request, prompt string, tempDir string, schemaPath string) (CommandSpec, string, error) {
@@ -123,25 +139,29 @@ func (runner CLIRunner) buildCommandSpec(request Request, prompt string, tempDir
 			}
 		}
 		outputPath := filepath.Join(tempDir, "codex-last-message.json")
+		args := []string{
+			"--ask-for-approval", "never",
+			"exec",
+			"--sandbox", "read-only",
+			"--skip-git-repo-check",
+			"--ephemeral",
+			"--ignore-rules",
+			"--color", "never",
+			"--json",
+			"-c", "model_reasoning_effort=\"low\"",
+			"--cd", tempDir,
+			"--output-schema", schemaPath,
+			"--output-last-message", outputPath,
+		}
+		if request.Model != "" {
+			args = append(args, "-m", request.Model)
+		}
+		args = append(args, "-")
 		return CommandSpec{
 			Executable: runner.CodexExecutable,
-			Args: []string{
-				"--ask-for-approval", "never",
-				"exec",
-				"--sandbox", "read-only",
-				"--skip-git-repo-check",
-				"--ephemeral",
-				"--ignore-rules",
-				"--color", "never",
-				"--json",
-				"-c", "model_reasoning_effort=\"low\"",
-				"--cd", tempDir,
-				"--output-schema", schemaPath,
-				"--output-last-message", outputPath,
-				"-",
-			},
-			Stdin: prompt,
-			Dir:   tempDir,
+			Args:       args,
+			Stdin:      prompt,
+			Dir:        tempDir,
 		}, outputPath, nil
 	case "claude":
 		if runner.ClaudeExecutable == "" {
@@ -150,22 +170,26 @@ func (runner CLIRunner) buildCommandSpec(request Request, prompt string, tempDir
 				Err:  errors.New("claude executable was not configured"),
 			}
 		}
+		args := []string{
+			"--print",
+			"--input-format", "text",
+			"--output-format", "json",
+			"--permission-mode", "dontAsk",
+			"--tools", "",
+			"--effort", "low",
+			"--safe-mode",
+			"--no-session-persistence",
+			"--no-chrome",
+			"--json-schema", planSchemaJSON,
+		}
+		if request.Model != "" {
+			args = append(args, "--model", request.Model)
+		}
 		return CommandSpec{
 			Executable: runner.ClaudeExecutable,
-			Args: []string{
-				"--print",
-				"--input-format", "text",
-				"--output-format", "text",
-				"--permission-mode", "dontAsk",
-				"--tools", "",
-				"--effort", "low",
-				"--safe-mode",
-				"--no-session-persistence",
-				"--no-chrome",
-				"--json-schema", planSchemaJSON,
-			},
-			Stdin: prompt,
-			Dir:   tempDir,
+			Args:       args,
+			Stdin:      prompt,
+			Dir:        tempDir,
 		}, "", nil
 	default:
 		return CommandSpec{}, "", BridgeError{
@@ -252,15 +276,20 @@ func looksLikeAuthError(text string) bool {
 	return false
 }
 
-func codexAttemptedToolUse(output string) bool {
+func scanCodexJSONL(output string) (bool, *Usage) {
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	scanner.Buffer(make([]byte, 0, 64*1024), MaxCLIOutputBytes)
+	var usage *Usage
 	for scanner.Scan() {
 		var event struct {
 			Type string `json:"type"`
 			Item struct {
 				Type string `json:"type"`
 			} `json:"item"`
+			Usage struct {
+				InputTokens  int `json:"input_tokens"`
+				OutputTokens int `json:"output_tokens"`
+			} `json:"usage"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			continue
@@ -268,11 +297,18 @@ func codexAttemptedToolUse(output string) bool {
 		switch event.Type {
 		case "item.started", "item.updated", "item.completed":
 			if event.Item.Type == "command_execution" || event.Item.Type == "file_change" {
-				return true
+				return true, usage
+			}
+		case "turn.completed":
+			if event.Usage.InputTokens > 0 || event.Usage.OutputTokens > 0 {
+				usage = &Usage{
+					InputTokens:  event.Usage.InputTokens,
+					OutputTokens: event.Usage.OutputTokens,
+				}
 			}
 		}
 	}
-	return false
+	return false, usage
 }
 
 func readSmallFile(filePath string, limit int) ([]byte, error) {
@@ -311,6 +347,90 @@ func ParsePlanText(text string, request Request) (Plan, error) {
 	}
 
 	return normalizePlan(plan, request), nil
+}
+
+func ParseClaudeResultEnvelope(result CommandResult, runErr error, request Request) (Plan, error) {
+	var bridgeError BridgeError
+	if errors.As(runErr, &bridgeError) {
+		// The command runner already made a confident, specific classification
+		// (e.g. cli-timeout) - trust it rather than attempt to parse whatever
+		// partial stdout exists.
+		return Plan{}, runErr
+	}
+
+	var envelope struct {
+		Type             string          `json:"type"`
+		Subtype          string          `json:"subtype"`
+		IsError          bool            `json:"is_error"`
+		Result           string          `json:"result"`
+		TotalCostUSD     *float64        `json:"total_cost_usd"`
+		StructuredOutput json.RawMessage `json:"structured_output"`
+		Usage            struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(result.Stdout)), &envelope); err != nil {
+		// stdout was not a parseable envelope at all - e.g. the process crashed
+		// or was killed before printing anything. Fall back to the generic
+		// process-error classifier rather than a bare parse-failure message.
+		if runErr != nil {
+			return Plan{}, classifyCLIError(request.Provider, result, runErr)
+		}
+		return Plan{}, BridgeError{
+			Kind: "malformed-output",
+			Err:  fmt.Errorf("claude CLI returned invalid result JSON: %w", err),
+		}
+	}
+	if envelope.IsError || envelope.Subtype != "success" {
+		detail := strings.TrimSpace(strings.Join([]string{envelope.Result, result.Stderr}, "\n"))
+		if looksLikeAuthError(detail) {
+			return Plan{}, BridgeError{
+				Kind: "cli-auth-missing",
+				Err:  fmt.Errorf("%s CLI is not signed in", request.Provider),
+			}
+		}
+		message := strings.TrimSpace(envelope.Result)
+		if message == "" {
+			message = fmt.Sprintf("%s CLI failed", request.Provider)
+		}
+		return Plan{}, BridgeError{
+			Kind: "cli-error",
+			Err:  errors.New(message),
+		}
+	}
+
+	usage := usageFromClaudeEnvelope(envelope.Usage.InputTokens, envelope.Usage.OutputTokens, envelope.TotalCostUSD)
+	if len(envelope.StructuredOutput) > 0 && string(envelope.StructuredOutput) != "null" {
+		var plan Plan
+		if err := json.Unmarshal(envelope.StructuredOutput, &plan); err != nil {
+			return Plan{}, BridgeError{
+				Kind: "malformed-output",
+				Err:  fmt.Errorf("claude CLI returned invalid structured output: %w", err),
+			}
+		}
+		plan = normalizePlan(plan, request)
+		plan.Usage = usage
+		return plan, nil
+	}
+
+	plan, err := ParsePlanText(envelope.Result, request)
+	if err != nil {
+		return Plan{}, err
+	}
+	plan.Usage = usage
+	return plan, nil
+}
+
+func usageFromClaudeEnvelope(inputTokens int, outputTokens int, totalCostUSD *float64) *Usage {
+	if inputTokens == 0 && outputTokens == 0 && totalCostUSD == nil {
+		return nil
+	}
+	return &Usage{
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		CostUsd:      totalCostUSD,
+	}
 }
 
 func (runner CLIRunner) withDefaults() CLIRunner {
@@ -480,7 +600,7 @@ func normalizePlan(plan Plan, request Request) Plan {
 		})
 	}
 
-	return Plan{Groups: groups, Assignments: assignments}
+	return Plan{Groups: groups, Assignments: assignments, Usage: plan.Usage}
 }
 
 func normalizePlanName(value string, fallback string) string {

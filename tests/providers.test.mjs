@@ -19,6 +19,7 @@ const heuristic = await createGroupPlanWithFallback(tabs, {
 assert.equal(heuristic.provider, "heuristic");
 assert.equal(heuristic.usedFallback, false);
 assert.equal(heuristic.plan.groups.length > 0, true);
+assert.equal(typeof heuristic.durationMs, "number");
 
 const fallback = await createGroupPlanWithFallback(tabs, {
   provider: "chrome-ai",
@@ -30,6 +31,7 @@ assert.equal(fallback.requestedProvider, "chrome-ai");
 assert.equal(fallback.usedFallback, true);
 assert.match(fallback.providerError, /built-in AI/i);
 assert.equal(fallback.plan.groups.length > 0, true);
+assert.equal(typeof fallback.durationMs, "number");
 
 await assert.rejects(
   createGroupPlanWithFallback(tabs, {
@@ -155,6 +157,10 @@ globalThis.fetch = async (url, options) => {
     ok: true,
     async json() {
       return {
+        usage: {
+          input_tokens: 123,
+          output_tokens: 45
+        },
         output_text: JSON.stringify({
           groups: [],
           assignments: [{ groupId: 7, tabIds: [1, 2] }]
@@ -178,6 +184,9 @@ const assignedPlan = await createGroupPlanWithFallback(
 
 assert.equal(assignedPlan.provider, "openai");
 assert.deepEqual(assignedPlan.plan.assignments, [{ groupId: 7, tabIds: [1, 2] }]);
+assert.equal(typeof assignedPlan.durationMs, "number");
+assert.equal(assignedPlan.inputTokens, 123);
+assert.equal(assignedPlan.outputTokens, 45);
 assert.equal(openAIRequestBody.max_output_tokens, 6000);
 const systemPrompt = openAIRequestBody.input[0].content[0].text;
 const userPrompt = openAIRequestBody.input[1].content[0].text;
@@ -198,6 +207,10 @@ globalThis.fetch = async (url, options) => {
     ok: true,
     async json() {
       return {
+        usage: {
+          input_tokens: 234,
+          output_tokens: 56
+        },
         content: [
           {
             type: "text",
@@ -226,6 +239,9 @@ const anthropicPlan = await createGroupPlanWithFallback(
 
 assert.equal(anthropicPlan.provider, "anthropic");
 assert.deepEqual(anthropicPlan.plan.assignments, [{ groupId: 7, tabIds: [1, 2] }]);
+assert.equal(typeof anthropicPlan.durationMs, "number");
+assert.equal(anthropicPlan.inputTokens, 234);
+assert.equal(anthropicPlan.outputTokens, 56);
 assert.equal(anthropicRequestBody.max_tokens, 6000);
 
 globalThis.chrome = originalChrome;

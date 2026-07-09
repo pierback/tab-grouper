@@ -227,6 +227,10 @@ async function tidyCurrentWindow(windowId, grantedHintOrigins = []) {
     usedFallback: planResult.providerResult.usedFallback,
     providerError: planResult.providerResult.providerError,
     providerErrorKind: planResult.providerResult.providerErrorKind,
+    durationMs: planResult.providerResult.durationMs,
+    inputTokens: planResult.providerResult.inputTokens,
+    outputTokens: planResult.providerResult.outputTokens,
+    costUsd: planResult.providerResult.costUsd,
     undoAvailable: true,
     message: buildTidySuccessMessage(appliedGroups, planResult.skipped, planResult.providerResult, appliedAssignments)
   };
@@ -347,6 +351,8 @@ function createPlanCacheKeyInput({ windowId, settings, groupableTabs, existingGr
     openaiModel: settings.openaiModel,
     anthropicApiKey: settings.anthropicApiKey,
     anthropicModel: settings.anthropicModel,
+    codexCliModel: settings.codexCliModel,
+    claudeCliModel: settings.claudeCliModel,
     groupableTabs: groupableTabs.map((tab) => ({
       id: tab.id,
       title: tab.title,

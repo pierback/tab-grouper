@@ -103,6 +103,8 @@ function readFormSettings() {
     openaiModel: String(formData.get("openaiModel") || DEFAULT_SETTINGS.openaiModel).trim(),
     anthropicApiKey: String(formData.get("anthropicApiKey") || ""),
     anthropicModel: String(formData.get("anthropicModel") || DEFAULT_SETTINGS.anthropicModel).trim(),
+    codexCliModel: String(formData.get("codexCliModel") || "").trim(),
+    claudeCliModel: String(formData.get("claudeCliModel") || "").trim(),
     includeFullUrls: formData.get("includeFullUrls") === "on",
     includePageHints: includePageHintsInput ? formData.get("includePageHints") === "on" : false,
     allowHeuristicFallback: formData.get("allowHeuristicFallback") === "on",

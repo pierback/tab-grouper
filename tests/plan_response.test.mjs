@@ -26,7 +26,11 @@ const readyPlan = {
   providerResult: {
     provider: "heuristic",
     usedFallback: false,
-    providerError: ""
+    providerError: "",
+    durationMs: 123,
+    inputTokens: 10,
+    outputTokens: 5,
+    costUsd: 0.0012
   }
 };
 
@@ -65,6 +69,10 @@ assert.deepEqual(createPlanResponse(readyPlan, { preview: true }), {
   usedFallback: false,
   providerError: "",
   providerErrorKind: "",
+  durationMs: 123,
+  inputTokens: 10,
+  outputTokens: 5,
+  costUsd: 0.0012,
   undoAvailable: false,
   message: "Would create 2 groups. Skipped 2 already grouped, 1 pinned.",
   preview: true
