@@ -12,6 +12,8 @@ const BROWSER_MANIFEST_DIRS = {
   "chrome-canary": ["Google", "Chrome Canary"],
   chromium: ["Chromium"],
   brave: ["BraveSoftware", "Brave-Browser"],
+  // Unverified best-effort guess; correct if this differs from a real Helium install.
+  helium: ["Helium"],
   edge: ["Microsoft Edge"]
 };
 
