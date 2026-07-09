@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createHash, generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync } from "node:crypto";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { extensionIdFromPublicKey } from "./lib/extension_id.mjs";
 
 const root = process.cwd();
 const chromePath = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -528,16 +529,6 @@ function createExtensionKey() {
     publicKeyBase64: publicKey.toString("base64"),
     extensionId: extensionIdFromPublicKey(publicKey)
   };
-}
-
-function extensionIdFromPublicKey(publicKeyDer) {
-  const hash = createHash("sha256").update(publicKeyDer).digest();
-  const letters = [];
-  for (const byte of hash.subarray(0, 16)) {
-    letters.push(String.fromCharCode(97 + (byte >> 4)));
-    letters.push(String.fromCharCode(97 + (byte & 0x0f)));
-  }
-  return letters.join("");
 }
 
 async function installTemporaryNativeHost(homeDir, extensionId) {

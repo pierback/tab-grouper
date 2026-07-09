@@ -25,18 +25,20 @@ The default provider is `Local heuristic`, so the extension works without an API
 To use `Local Codex CLI` or `Local Claude Code CLI`, install the native host after loading the unpacked extension:
 
 ```sh
-pnpm run native:install -- --extension-id <id-from-chrome-extensions>
+pnpm run native:install
 ```
 
-The extension ID is shown on the extension card in `chrome://extensions` when Developer mode is enabled. The installer builds the Go native host and writes the Chrome Native Messaging manifest for `com.fabianpieringer.tab_grouper`.
+The installer derives the pinned extension ID from `manifest.json`, builds the Go native host, and writes the Chrome Native Messaging manifest for `com.fabianpieringer.tab_grouper`.
 
 For Brave, Edge, Chromium, or Chrome Canary on macOS, pass `--browser brave`, `--browser edge`, `--browser chromium`, or `--browser chrome-canary`.
 
 The installer also writes a locked native-host config beside the built binary with the discovered `codex` and `claude` executable paths. If either CLI is installed somewhere unusual, pass explicit paths:
 
 ```sh
-pnpm run native:install -- --extension-id <id-from-chrome-extensions> --codex-path /path/to/codex --claude-path /path/to/claude
+pnpm run native:install -- --codex-path /path/to/codex --claude-path /path/to/claude
 ```
+
+Pass `--extension-id <chrome-extension-id>` only when intentionally installing the native host for a different loaded extension.
 
 After choosing `Local Codex CLI` or `Local Claude Code CLI` in Options, use **Test bridge** to verify Native Messaging, the pinned CLI path, and sign-in state without running a model request.
 

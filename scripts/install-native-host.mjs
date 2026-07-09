@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { extensionIdFromManifestKey } from "./lib/extension_id.mjs";
 
 const NATIVE_HOST_NAME = "com.fabianpieringer.tab_grouper";
 const BROWSER_MANIFEST_DIRS = {
@@ -16,12 +17,14 @@ const BROWSER_MANIFEST_DIRS = {
 
 const args = parseArgs(process.argv.slice(2));
 const browser = args.browser || "chrome";
-const extensionId = args["extension-id"];
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-if (args.help || !extensionId) {
+if (args.help) {
   printUsage();
-  process.exit(extensionId ? 0 : 1);
+  process.exit(0);
 }
+
+const extensionId = args["extension-id"] || readExtensionIdFromManifest(root);
 
 if (!/^[a-p]{32}$/.test(extensionId)) {
   throw new Error("Extension ID must be the 32-character Chrome extension ID from chrome://extensions.");
@@ -36,7 +39,6 @@ if (!browserDirParts) {
   throw new Error(`Unsupported browser "${browser}". Supported: ${Object.keys(BROWSER_MANIFEST_DIRS).join(", ")}.`);
 }
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nativeHostDir = path.join(root, "native-host");
 const binaryDir = path.join(nativeHostDir, "bin");
 const binaryPath = path.join(binaryDir, "tab-grouper-native-host");
@@ -159,11 +161,22 @@ function isExecutableFile(filePath) {
   }
 }
 
+function readExtensionIdFromManifest(rootDir) {
+  const manifestPath = path.join(rootDir, "manifest.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if (!manifest.key) {
+    throw new Error("No --extension-id was provided and manifest.json has no key field. Run with --extension-id <chrome-extension-id> or ensure manifest.json has a key field.");
+  }
+  return extensionIdFromManifestKey(manifest.key);
+}
+
 function printUsage() {
   console.log(`Usage:
+  pnpm run native:install
+  pnpm run native:install -- --browser brave
+  pnpm run native:install -- --codex-path /path/to/codex --claude-path /path/to/claude
   pnpm run native:install -- --extension-id <chrome-extension-id>
-  pnpm run native:install -- --browser brave --extension-id <chrome-extension-id>
-  pnpm run native:install -- --extension-id <chrome-extension-id> --codex-path /path/to/codex --claude-path /path/to/claude
 
-Find the extension ID in chrome://extensions after loading this folder unpacked.`);
+By default the installer derives the extension ID from manifest.json's key field.
+Pass --extension-id to override it for another loaded extension.`);
 }

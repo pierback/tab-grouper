@@ -3,6 +3,7 @@
   "name": "Tab Grouper",
   "version": "0.1.0",
   "description": "Tidy open tabs into logical groups with local heuristics or an AI provider.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7m1xfr2Nx3pTOUB/n9vVwUQePnvl96r6UEiP+5RgnB2kjpR/CfHO9qB7QPQp6qp/lZPnEBzZGEUscvRTwqBDwQwGv5uKidmmbXKheNo3xqmb3TB0tczkX7YXwZ1kR/TYqa1bBSMH2gOqGNl8oQWArihWV2GOhsGuoig4eVQTlbR4bhwUxQwLPeY/49n5+lYoVy6W98QbVtGVDJjgRUm7lNJ/PmyGBQoz1KW5aByriOgwRbU++VZM5CYHe5/M6kQRSG2X3a2c+WJ9LlE6/MkYpNZzSU5vT0F2PnFErmRnxtGDeCmDAE5qcmTbkmsjITHePCbcsOYhTv+xdYhLQWsdnQIDAQAB",
   "permissions": [
     "storage",
     "tabs",
