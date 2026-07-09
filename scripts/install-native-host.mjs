@@ -44,6 +44,8 @@ const configPath = `${binaryPath}.config.json`;
 const codexExecutable = resolveExecutablePath(args["codex-path"] || "codex");
 const claudeExecutable = resolveExecutablePath(args["claude-path"] || "claude");
 
+run("npm", ["run", "build"], root);
+
 fs.mkdirSync(binaryDir, { recursive: true });
 run("go", ["build", "-o", binaryPath, "."], nativeHostDir);
 fs.writeFileSync(
