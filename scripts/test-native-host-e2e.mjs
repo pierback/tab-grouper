@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,9 +9,14 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nativeHostDir = path.join(root, "native-host");
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tab-grouper-native-e2e-"));
+const daemonTestEnv = {
+  TAB_GROUPER_NATIVE_HOST_IDLE_TIMEOUT_MS: "500",
+  TAB_GROUPER_NATIVE_HOST_IDLE_CHECK_INTERVAL_MS: "50"
+};
+let binaryPath;
 
 try {
-  const binaryPath = path.join(tempDir, "tab-grouper-native-host");
+  binaryPath = path.join(tempDir, "tab-grouper-native-host");
   const fakeCodexPath = path.join(tempDir, "fake-codex.mjs");
   fs.writeFileSync(fakeCodexPath, fakeCodexSource(), { mode: 0o755 });
   run("go", ["build", "-o", binaryPath, "."], nativeHostDir);
@@ -32,7 +38,7 @@ try {
     provider: "codex"
   });
 
-  assert.equal(statusResponse.ok, true);
+  assert.equal(statusResponse.ok, true, JSON.stringify(statusResponse));
   assert.equal(statusResponse.provider, "local-codex-cli");
   assert.deepEqual(statusResponse.status, {
     provider: "local-codex-cli",
@@ -56,13 +62,16 @@ try {
     ]
   });
 
-  assert.equal(response.ok, true);
+  assert.equal(response.ok, true, JSON.stringify(response));
   assert.equal(response.provider, "local-codex-cli");
   assert.deepEqual(response.plan.groups, [
     { name: "Pinned Codex", color: "blue", tabIds: [1, 2] }
   ]);
   console.log("Native host framed E2E test passed.");
 } finally {
+  if (binaryPath) {
+    await waitForDaemonShutdown(nativeHostRuntimePaths(binaryPath).socketPath);
+  }
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
@@ -77,7 +86,10 @@ function run(command, args, cwd) {
 }
 
 async function runNativeHost(binaryPath, request) {
-  const child = spawn(binaryPath, { stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(binaryPath, {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, ...daemonTestEnv }
+  });
   const stdoutChunks = [];
   const stderrChunks = [];
   child.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
@@ -97,6 +109,39 @@ async function runNativeHost(binaryPath, request) {
   const size = stdout.readUInt32LE(0);
   assert.equal(stdout.length, size + 4, `unexpected native response size. stderr: ${stderr}`);
   return JSON.parse(stdout.subarray(4).toString("utf8"));
+}
+
+async function waitForDaemonShutdown(socketPath) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 3000) {
+    if (!fs.existsSync(socketPath)) {
+      return;
+    }
+    await sleep(50);
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function nativeHostRuntimePaths(executablePath) {
+  const resolvedPath = fsRealPath(executablePath);
+  const runtimeId = createHash("sha256").update(resolvedPath).digest("hex").slice(0, 16);
+  const basePath = path.join("/tmp", `tab-grouper-native-host-${runtimeId}`);
+  return {
+    socketPath: `${basePath}.sock`
+  };
+}
+
+function fsRealPath(filePath) {
+  try {
+    return fs.realpathSync.native(filePath);
+  } catch {
+    return path.resolve(filePath);
+  }
 }
 
 function encodeNativeMessage(message) {

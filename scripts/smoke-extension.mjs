@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { generateKeyPairSync } from "node:crypto";
+import fs from "node:fs";
+import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +11,10 @@ import { extensionIdFromPublicKey } from "./lib/extension_id.mjs";
 const root = process.cwd();
 const chromePath = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const nativeHostName = "com.fabianpieringer.tab_grouper";
+const daemonTestEnv = {
+  TAB_GROUPER_NATIVE_HOST_IDLE_TIMEOUT_MS: "500",
+  TAB_GROUPER_NATIVE_HOST_IDLE_CHECK_INTERVAL_MS: "50"
+};
 
 async function runSmoke() {
   let chromeProcess;
@@ -34,7 +39,8 @@ async function runSmoke() {
       "--remote-debugging-port=0",
       "about:blank"
     ], {
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, ...daemonTestEnv }
     });
 
     const debugPort = await waitForDebugPort(profileDir, chromeProcess);
@@ -489,6 +495,7 @@ async function prepareSmokeExtension(profileDir) {
       }
       return !relative.split(path.sep).some((part) =>
         part === ".git" ||
+        part === ".gocache" ||
         part === "node_modules" ||
         part === "bin"
       );
@@ -574,6 +581,7 @@ async function installTemporaryNativeHost(homeDir, extensionId) {
   }
 
   return async () => {
+    await waitForDaemonShutdown(nativeHostRuntimePaths(binaryPath).socketPath).catch(() => null);
     if (previousManifest.exists) {
       await writeFile(realManifestPath, previousManifest.contents, { mode: 0o644 });
       return;
@@ -589,6 +597,35 @@ function run(command, args, cwd) {
   }
   if (result.status !== 0) {
     throw new Error(`${command} exited with status ${result.status}`);
+  }
+}
+
+async function waitForDaemonShutdown(socketPath) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 3000) {
+    try {
+      await access(socketPath);
+      await sleep(50);
+    } catch {
+      return;
+    }
+  }
+}
+
+function nativeHostRuntimePaths(executablePath) {
+  const resolvedPath = fsRealPath(executablePath);
+  const runtimeId = createHash("sha256").update(resolvedPath).digest("hex").slice(0, 16);
+  const basePath = path.join("/tmp", `tab-grouper-native-host-${runtimeId}`);
+  return {
+    socketPath: `${basePath}.sock`
+  };
+}
+
+function fsRealPath(filePath) {
+  try {
+    return fs.realpathSync.native(filePath);
+  } catch {
+    return path.resolve(filePath);
   }
 }
 

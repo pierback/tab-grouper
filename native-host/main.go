@@ -8,13 +8,22 @@ import (
 
 func main() {
 	log.SetOutput(os.Stderr)
-	request, err := ReadNativeMessage(os.Stdin)
+
+	executablePath, err := os.Executable()
 	if err != nil {
-		log.Printf("failed to read native message: %v", err)
+		log.Printf("failed to resolve executable path: %v", err)
 		return
 	}
-	response := NewHost().Handle(context.Background(), request)
-	if err := WriteNativeMessage(os.Stdout, response); err != nil {
-		log.Printf("failed to write native message: %v", err)
+	paths := nativeHostRuntimePaths(executablePath)
+
+	if hasDaemonArg(os.Args[1:]) {
+		if err := runDaemon(context.Background(), defaultDaemonConfig(paths.SocketPath)); err != nil {
+			log.Printf("daemon exited with error: %v", err)
+		}
+		return
+	}
+
+	if err := runProxyOrStartDaemon(context.Background(), os.Stdin, os.Stdout, defaultProxyConfig(executablePath, paths)); err != nil {
+		log.Printf("native host proxy failed: %v", err)
 	}
 }
