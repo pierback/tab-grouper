@@ -5,11 +5,21 @@
   "type": "module",
   "description": "Chrome MV3 extension that tidies tabs into logical groups.",
   "scripts": {
-    "test": "node tests/schema.test.mjs && node tests/settings.test.mjs && node tests/tabs.test.mjs && node tests/page_hints.test.mjs && node tests/hint_cache.test.mjs && node tests/heuristics.test.mjs && node tests/undo.test.mjs && node tests/native_cli_provider.test.mjs && node tests/providers.test.mjs && node tests/provider_metadata.test.mjs && node tests/plan_response.test.mjs && node tests/plan_cache.test.mjs && node tests/service_worker.test.mjs && node tests/popup.test.mjs && node tests/options.test.mjs && node scripts/validate-extension.mjs && npm run test:go && npm run test:native-host-e2e",
+    "build": "esbuild src/service_worker.ts src/popup.ts src/options.ts --bundle --format=esm --platform=browser --target=chrome120 --outdir=dist --sourcemap",
+    "build:watch": "npm run build -- --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "npm run typecheck && npm run build && tsx tests/schema.test.ts && tsx tests/settings.test.ts && tsx tests/tabs.test.ts && tsx tests/page_hints.test.ts && tsx tests/hint_cache.test.ts && tsx tests/heuristics.test.ts && tsx tests/undo.test.ts && tsx tests/native_cli_provider.test.ts && tsx tests/providers.test.ts && tsx tests/provider_metadata.test.ts && tsx tests/plan_response.test.ts && tsx tests/plan_cache.test.ts && tsx tests/service_worker.test.ts && tsx tests/popup.test.ts && tsx tests/options.test.ts && node scripts/validate-extension.mjs && npm run test:go && npm run test:native-host-e2e",
     "test:go": "cd native-host && go test ./...",
     "test:native-host-e2e": "node scripts/test-native-host-e2e.mjs",
     "native:install": "node scripts/install-native-host.mjs",
-    "smoke:chrome": "node scripts/smoke-extension.mjs"
+    "smoke:chrome": "npm run build && node scripts/smoke-extension.mjs"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@types/chrome": "^0.2.2",
+    "@types/dom-chromium-ai": "^0.0.17",
+    "@types/node": "^20.19.43",
+    "esbuild": "^0.28.1",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2"
+  }
 }

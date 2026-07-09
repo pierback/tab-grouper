@@ -8,11 +8,15 @@ This is an MVP prototype. It avoids automating Claude.ai, ChatGPT, or Codex web 
 
 ## Load locally
 
-1. Open `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Click **Load unpacked**.
-4. Select this folder: `/Users/fabianpieringer/projects/tab-grouper`.
-5. Open the extension options and choose a provider.
+The extension is written in TypeScript and needs a one-time build before loading:
+
+1. Run `npm install` (installs the TypeScript/esbuild toolchain).
+2. Run `npm run build` (compiles `src/*.ts` into `dist/*.js`; re-run this after any source change - `npm run build:watch` rebuilds automatically).
+3. Open `chrome://extensions`.
+4. Enable **Developer mode**.
+5. Click **Load unpacked**.
+6. Select this folder: `/Users/fabianpieringer/projects/tab-grouper`.
+7. Open the extension options and choose a provider.
 
 The default provider is `Local heuristic`, so the extension works without an API key.
 

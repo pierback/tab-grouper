@@ -24,7 +24,7 @@
     "default_title": "Tidy tabs"
   },
   "background": {
-    "service_worker": "service_worker.js",
+    "service_worker": "dist/service_worker.js",
     "type": "module"
   },
   "options_page": "options.html"
