@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -62,6 +63,7 @@ fs.writeFileSync(
   }, null, 2)}\n`,
   { mode: 0o600 }
 );
+const daemonRestartResult = restartNativeHostDaemon(binaryPath);
 
 const manifestDir = path.join(
   os.homedir(),
@@ -87,6 +89,11 @@ fs.writeFileSync(
 console.log(`Built native host: ${binaryPath}`);
 console.log(`Wrote native host config: ${configPath}`);
 console.log(`Installed Native Messaging manifest: ${manifestPath}`);
+if (daemonRestartResult.restarted) {
+  console.log("Restarted native host daemon (old daemon terminated; a fresh one will start on next use).");
+} else if (!daemonRestartResult.failed) {
+  console.log("No running native host daemon to restart.");
+}
 if (!codexExecutable) {
   console.warn("Warning: codex CLI was not found during install. Local Codex CLI provider will fall back until reinstalled with a Codex path.");
 }
@@ -161,6 +168,55 @@ function isExecutableFile(filePath) {
   } catch {
     return false;
   }
+}
+
+function restartNativeHostDaemon(executablePath) {
+  const paths = nativeHostRuntimePaths(executablePath);
+  const daemonPattern = `${escapeRegex(path.resolve(executablePath))}[[:space:]]+--daemon([[:space:]]|$)`;
+  const result = spawnSync("pkill", ["-f", daemonPattern], {
+    stdio: "ignore"
+  });
+
+  if (result.error) {
+    console.warn(`Warning: failed to restart native host daemon: ${result.error.message}`);
+    return { failed: true, restarted: false };
+  }
+  if (result.status !== 0 && result.status !== 1) {
+    console.warn(`Warning: failed to restart native host daemon: pkill exited with status ${result.status}`);
+    return { failed: true, restarted: false };
+  }
+
+  try {
+    fs.rmSync(paths.socketPath, { force: true });
+  } catch (error) {
+    console.warn(`Warning: failed to remove stale native host daemon socket ${paths.socketPath}: ${error.message}`);
+  }
+  return { failed: false, restarted: result.status === 0 };
+}
+
+function nativeHostRuntimePaths(executablePath) {
+  const runtimeId = nativeHostRuntimeID(executablePath);
+  const basePath = path.join("/tmp", `tab-grouper-native-host-${runtimeId}`);
+  return {
+    socketPath: `${basePath}.sock`,
+    lockPath: `${basePath}.lock`,
+    logPath: `${basePath}-daemon.log`
+  };
+}
+
+function nativeHostRuntimeID(executablePath) {
+  const absolutePath = path.resolve(executablePath);
+  let resolvedPath = absolutePath;
+  try {
+    resolvedPath = fs.realpathSync(absolutePath);
+  } catch {
+    resolvedPath = absolutePath;
+  }
+  return createHash("sha256").update(resolvedPath).digest("hex").slice(0, 16);
+}
+
+function escapeRegex(value) {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
 }
 
 function readExtensionIdFromManifest(rootDir) {

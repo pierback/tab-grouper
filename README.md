@@ -40,7 +40,7 @@ pnpm run native:install -- --codex-path /path/to/codex --claude-path /path/to/cl
 
 Pass `--extension-id <chrome-extension-id>` only when intentionally installing the native host for a different loaded extension.
 
-The native host binary itself is just a thin per-connection proxy: the first request from any browser auto-starts one shared background daemon (a Unix socket under `/tmp`, named from a hash of this checkout's path), which every subsequent request from any browser reuses. There's nothing to start or manage manually; the daemon shuts itself down after 30 minutes of inactivity.
+The native host binary itself is just a thin per-connection proxy: the first request from any browser auto-starts one shared background daemon (a Unix socket under `/tmp`, named from a hash of this checkout's path), which every subsequent request from any browser reuses. There's nothing to start or manage manually; the daemon shuts itself down after 30 minutes of inactivity, and `pnpm run native:install` restarts it so binary updates take effect immediately.
 
 After choosing `Local Codex CLI` or `Local Claude Code CLI` in Options, use **Test bridge** to verify Native Messaging, the pinned CLI path, and sign-in state without running a model request.
 
