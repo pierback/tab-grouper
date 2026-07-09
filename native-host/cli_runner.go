@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const planSchemaJSON = `{"type":"object","properties":{"groups":{"type":"array","maxItems":12,"items":{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":32},"color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"]},"tabIds":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"integer"}}},"required":["name","color","tabIds"],"additionalProperties":false}},"assignments":{"type":"array","maxItems":50,"items":{"type":"object","properties":{"groupId":{"type":"integer"},"tabIds":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"integer"}}},"required":["groupId","tabIds"],"additionalProperties":false}}},"required":["groups","assignments"],"additionalProperties":false}`
+const planSchemaJSON = `{"type":"object","properties":{"groups":{"type":"array","maxItems":40,"items":{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":32},"color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"]},"tabIds":{"type":"array","minItems":1,"maxItems":300,"items":{"type":"integer"}}},"required":["name","color","tabIds"],"additionalProperties":false}},"assignments":{"type":"array","maxItems":100,"items":{"type":"object","properties":{"groupId":{"type":"integer"},"tabIds":{"type":"array","minItems":1,"maxItems":300,"items":{"type":"integer"}}},"required":["groupId","tabIds"],"additionalProperties":false}}},"required":["groups","assignments"],"additionalProperties":false}`
 const CLIStatusTimeout = 3 * time.Second
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
@@ -418,7 +418,7 @@ func normalizePlan(plan Plan, request Request) Plan {
 	usedIDs := map[int]bool{}
 	groups := []PlanGroup{}
 	for _, group := range plan.Groups {
-		if len(groups) >= 12 {
+		if len(groups) >= 40 {
 			break
 		}
 
@@ -449,7 +449,7 @@ func normalizePlan(plan Plan, request Request) Plan {
 
 	assignments := []PlanAssignment{}
 	for _, assignment := range plan.Assignments {
-		if len(assignments) >= 50 {
+		if len(assignments) >= 100 {
 			break
 		}
 		if !existingGroupIDs[assignment.GroupID] {

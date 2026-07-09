@@ -54,4 +54,12 @@ assert.deepEqual(docsPlan.groups, [
   { name: "Dev Docs", color: "blue", tabIds: [1, 2, 3] }
 ]);
 
+const manyBucketTabs = Array.from({ length: 30 }, (_, index) => [
+  { id: index * 2 + 1, title: "A", domain: `site-${index}.example.com`, url: `https://site-${index}.example.com/a`, index: index * 2 },
+  { id: index * 2 + 2, title: "B", domain: `site-${index}.example.com`, url: `https://site-${index}.example.com/b`, index: index * 2 + 1 }
+]).flat();
+const manyBucketPlan = groupTabsHeuristically(manyBucketTabs, settings);
+
+assert.equal(manyBucketPlan.groups.length, 30);
+
 console.log("Heuristic tests passed.");

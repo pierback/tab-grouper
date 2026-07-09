@@ -45,6 +45,22 @@ func TestValidateRequestRejectsDuplicateTabIds(t *testing.T) {
 	}
 }
 
+func TestValidateRequestAcceptsMoreThanOldTabLimit(t *testing.T) {
+	request := validRequest()
+	request.Tabs = make([]Tab, 300)
+	for index := range request.Tabs {
+		request.Tabs[index] = Tab{
+			ID:     index + 1,
+			Title:  "Tab",
+			Domain: "example.com",
+		}
+	}
+
+	if err := ValidateRequest(request); err != nil {
+		t.Fatalf("expected 300 tabs to validate: %v", err)
+	}
+}
+
 func TestValidateRequestAcceptsTabContext(t *testing.T) {
 	request := validRequest()
 	request.Tabs[0].Context = validTabContext()

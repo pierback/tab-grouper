@@ -163,6 +163,34 @@ func TestParsePlanTextNormalizesUnsafeGroups(t *testing.T) {
 	}
 }
 
+func TestParsePlanTextKeepsMoreThanOldGroupLimit(t *testing.T) {
+	request := validRequest()
+	request.Tabs = []Tab{}
+	groups := make([]PlanGroup, 20)
+	for index := range groups {
+		tabID := index + 1
+		request.Tabs = append(request.Tabs, Tab{ID: tabID, Title: "Tab", Domain: "example.com"})
+		groups[index] = PlanGroup{
+			Name:   "Group",
+			Color:  "blue",
+			TabIDs: []int{tabID},
+		}
+	}
+	request.MinimumGroupSize = 1
+	payload, err := json.Marshal(Plan{Groups: groups})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	plan, err := ParsePlanText(string(payload), request)
+	if err != nil {
+		t.Fatalf("ParsePlanText failed: %v", err)
+	}
+	if len(plan.Groups) != 20 {
+		t.Fatalf("expected 20 groups, got %d", len(plan.Groups))
+	}
+}
+
 func TestParsePlanTextNormalizesAssignments(t *testing.T) {
 	request := validRequest()
 	request.Tabs = append(request.Tabs,

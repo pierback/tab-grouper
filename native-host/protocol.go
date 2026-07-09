@@ -14,10 +14,11 @@ const (
 	RequestStatusType = "NATIVE_HOST_STATUS_REQUEST"
 	RequestPingType   = "PING"
 	ResponseType      = "TAB_GROUP_PLAN_RESPONSE"
-	MaxMessageBytes   = 1024 * 1024
-	MaxTabs           = 200
-	MaxExistingGroups = 50
-	MaxGroupTabIDs    = 100
+	MaxRequestBytes   = 8 * 1024 * 1024
+	MaxResponseBytes  = 1024 * 1024
+	MaxTabs           = 1000
+	MaxExistingGroups = 100
+	MaxGroupTabIDs    = 300
 )
 
 type Tab struct {
@@ -110,7 +111,7 @@ func ReadNativeMessage(reader io.Reader) (Request, error) {
 		return Request{}, err
 	}
 	size := binary.LittleEndian.Uint32(sizeBytes[:])
-	if size == 0 || size > MaxMessageBytes {
+	if size == 0 || size > MaxRequestBytes {
 		return Request{}, fmt.Errorf("invalid native message size: %d", size)
 	}
 	payload := make([]byte, size)
@@ -129,7 +130,7 @@ func WriteNativeMessage(writer io.Writer, response Response) error {
 	if err != nil {
 		return err
 	}
-	if len(payload) > MaxMessageBytes {
+	if len(payload) > MaxResponseBytes {
 		return errors.New("native response is too large")
 	}
 	var sizeBytes [4]byte

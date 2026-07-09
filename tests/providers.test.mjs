@@ -178,6 +178,7 @@ const assignedPlan = await createGroupPlanWithFallback(
 
 assert.equal(assignedPlan.provider, "openai");
 assert.deepEqual(assignedPlan.plan.assignments, [{ groupId: 7, tabIds: [1, 2] }]);
+assert.equal(openAIRequestBody.max_output_tokens, 6000);
 const systemPrompt = openAIRequestBody.input[0].content[0].text;
 const userPrompt = openAIRequestBody.input[1].content[0].text;
 assert.match(systemPrompt, /existingGroups are current Chrome tab groups/);
@@ -189,6 +190,43 @@ assert.match(systemPrompt, /short concrete noun phrases/);
 assert.match(systemPrompt, /never generic labels/);
 assert.match(userPrompt, /Add ungrouped tabs to matching existingGroups/);
 assert.match(userPrompt, /"title": "Berlin Trip"/);
+
+let anthropicRequestBody = null;
+globalThis.fetch = async (url, options) => {
+  anthropicRequestBody = JSON.parse(options.body);
+  return {
+    ok: true,
+    async json() {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              groups: [],
+              assignments: [{ groupId: 7, tabIds: [1, 2] }]
+            })
+          }
+        ]
+      };
+    }
+  };
+};
+
+const anthropicPlan = await createGroupPlanWithFallback(
+  tabs,
+  {
+    provider: "anthropic",
+    anthropicApiKey: "sk-ant-test",
+    anthropicModel: "claude-test",
+    minimumGroupSize: 2
+  },
+  tabs,
+  [{ id: 7, title: "Berlin Trip", color: "cyan", tabIds: [9] }]
+);
+
+assert.equal(anthropicPlan.provider, "anthropic");
+assert.deepEqual(anthropicPlan.plan.assignments, [{ groupId: 7, tabIds: [1, 2] }]);
+assert.equal(anthropicRequestBody.max_tokens, 6000);
 
 globalThis.chrome = originalChrome;
 globalThis.fetch = originalFetch;
