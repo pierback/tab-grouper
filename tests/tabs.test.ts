@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
 import { getTabSkipReason, isGroupableTab, isTabGrouped, parseUrl, tabToPromptRecord } from "../src/lib/tabs.js";
+import { truncateToByteLength } from "../src/lib/text.js";
 
 const baseSettings = {
   includeFullUrls: false,
   ignorePinnedTabs: true,
   keepExistingGroups: true
 };
+
+{
+  assert.equal(truncateToByteLength("plain", 10), "plain");
+  assert.equal(truncateToByteLength("abc", 3), "abc");
+  assert.equal(truncateToByteLength("語".repeat(101), 300), "語".repeat(100));
+  assert.equal(truncateToByteLength("😀", 3), "");
+}
 
 assert.equal(isGroupableTab({ id: 1, url: "https://github.com/openai/codex", groupId: -1 }, baseSettings), true);
 assert.equal(getTabSkipReason({ id: 1, url: "https://github.com", pinned: true, groupId: -1 }, baseSettings), "pinned");
@@ -73,6 +81,21 @@ assert.deepEqual(
   assert.equal(record.title.length, 300);
   assert.equal(record.url!.length, 1000);
   assert.equal(record.pageHint!.length, 1000);
+}
+
+{
+  // The native host validates this field by UTF-8 byte length. A title with
+  // multibyte characters can be within the old JS code-unit cap while still
+  // exceeding the Go byte cap, so the client must truncate by bytes.
+  const multibyteTitle = "語".repeat(200);
+  const record = tabToPromptRecord(
+    { id: 10, title: multibyteTitle, url: "https://example.com" },
+    baseSettings
+  );
+  assert.equal(multibyteTitle.length <= 300, true);
+  assert.equal(new TextEncoder().encode(multibyteTitle).length > 300, true);
+  assert.equal(new TextEncoder().encode(record.title).length <= 300, true);
+  assert.equal(Array.from(record.title).join(""), record.title);
 }
 
 console.log("Tab helper tests passed.");

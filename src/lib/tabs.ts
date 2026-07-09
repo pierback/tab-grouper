@@ -1,4 +1,5 @@
 import type { EnrichedTab, LocalTabRecord, PromptTabRecord, Settings } from "./types.js";
+import { truncateToByteLength } from "./text.js";
 
 const TITLE_MAX_LENGTH = 300;
 const DOMAIN_MAX_LENGTH = 120;
@@ -28,7 +29,7 @@ export function tabToPromptRecord(tab: EnrichedTab, settings: Partial<Pick<Setti
 
 function truncate(value: unknown, maxLength: number): string {
   const text = String(value || "");
-  return text.length > maxLength ? text.slice(0, maxLength) : text;
+  return truncateToByteLength(text, maxLength);
 }
 
 export function tabToLocalRecord(tab: EnrichedTab): LocalTabRecord {

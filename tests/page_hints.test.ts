@@ -103,6 +103,20 @@ assert.equal(oversizedContext!.visibleText, "");
 assert.deepEqual(oversizedContext!.headings, []);
 assert.equal(oversizedContext!.truncated, true);
 
+const multibyteContext = normalizePageContext({
+  headings: ["😀".repeat(50)],
+  visibleText: "語".repeat(300)
+});
+const multibyteHeading = multibyteContext!.headings[0];
+if (multibyteHeading === undefined) {
+  throw new Error("Expected normalized multibyte heading.");
+}
+assert.equal(new TextEncoder().encode(multibyteContext!.visibleText).length <= 600, true);
+assert.equal(Array.from(multibyteContext!.visibleText).join(""), multibyteContext!.visibleText);
+assert.equal(new TextEncoder().encode(multibyteHeading).length <= 160, true);
+assert.equal(Array.from(multibyteHeading).join(""), multibyteHeading);
+assert.equal(multibyteContext!.truncated, true);
+
 const originalDocument = globalThis.document;
 const originalLocation = globalThis.location;
 const originalRequestIdleCallback = globalThis.requestIdleCallback;

@@ -1,4 +1,5 @@
 import type { EnrichedTab, PageContext, PartialSettings } from "./types.js";
+import { truncateToByteLength } from "./text.js";
 
 const PAGE_HINT_MAX_LENGTH = 600;
 const PAGE_HINT_PART_MAX_LENGTH = 160;
@@ -206,11 +207,11 @@ function firstNonEmpty(...values: unknown[]): unknown {
 }
 
 function cleanText(value: unknown, maxLength: number): string {
-  return String(value || "")
+  const text = String(value || "")
     .replace(/[\u0000-\u001f\u007f]+/g, " ")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, maxLength);
+    .trim();
+  return truncateToByteLength(text, maxLength);
 }
 
 function fitContextToByteBudget(context: PageContext): PageContext {
