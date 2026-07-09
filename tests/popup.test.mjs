@@ -293,4 +293,20 @@ function flushAsyncWork() {
   assert.equal(elements.result.children[2].innerHTML, "AI provider: <strong>Local Claude Code CLI</strong>.");
 }
 
+{
+  const { elements } = await importPopup({
+    tidyResponse: {
+      ok: false,
+      error: "Tab Grouper native bridge is not allowed for this extension.",
+      providerErrorKind: "native-host-forbidden"
+    }
+  });
+
+  await elements["tidy-button"].dispatch("click");
+  assert.equal(
+    elements.result.textContent,
+    "Native bridge is not allowed for this extension ID. Reinstall the native host."
+  );
+}
+
 console.log("Popup tests passed.");

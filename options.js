@@ -3,6 +3,7 @@ import { checkNativeCliStatus } from "./lib/native_cli_provider.js";
 import {
   getAllProviderOrigins,
   getAllProviderPermissions,
+  getFriendlyProviderErrorMessage,
   getProviderDataScope,
   getProviderOrigins,
   getProviderPermissions
@@ -182,26 +183,10 @@ async function testNativeBridge() {
     }
     setNativeBridgeStatus(`${localCliLabel(provider)} bridge is not ready.`, true);
   } catch (error) {
-    setNativeBridgeStatus(nativeBridgeErrorMessage(error), true);
+    setNativeBridgeStatus(getFriendlyProviderErrorMessage(error), true);
   } finally {
     testNativeBridgeButton.disabled = false;
   }
-}
-
-function nativeBridgeErrorMessage(error) {
-  if (error?.providerErrorKind === "missing-native-permission") {
-    return "Native Messaging permission is missing. Save this provider or grant permission.";
-  }
-  if (error?.providerErrorKind === "native-host-not-found") {
-    return "Native bridge is not installed. Run npm run native:install.";
-  }
-  if (error?.providerErrorKind === "native-host-forbidden") {
-    return "Native bridge is not allowed for this extension ID. Reinstall the native host.";
-  }
-  if (error?.providerErrorKind === "native-host-config-error") {
-    return "Native bridge config is invalid. Reinstall the native host.";
-  }
-  return error?.message || "Native bridge check failed.";
 }
 
 function localCliLabel(provider) {

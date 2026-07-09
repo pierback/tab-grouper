@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   getAllProviderOrigins,
   getAllProviderPermissions,
+  getFriendlyProviderErrorMessage,
   getProviderDataScope,
   getProviderLabel,
   getProviderOrigins,
@@ -63,5 +64,19 @@ assert.deepEqual(getProviderPermissions("local-codex-cli"), ["nativeMessaging"])
 assert.deepEqual(getProviderPermissions("local-claude-cli"), ["nativeMessaging"]);
 assert.deepEqual(getProviderPermissions("heuristic"), []);
 assert.deepEqual(getAllProviderPermissions(), ["nativeMessaging"]);
+
+assert.equal(
+  getFriendlyProviderErrorMessage({ providerErrorKind: "native-host-forbidden" }),
+  "Native bridge is not allowed for this extension ID. Reinstall the native host."
+);
+assert.equal(
+  getFriendlyProviderErrorMessage({ providerErrorKind: "native-host-not-found" }),
+  "Native bridge is not installed. Run npm run native:install."
+);
+assert.equal(
+  getFriendlyProviderErrorMessage({ providerErrorKind: "unknown-kind", message: "raw detail" }),
+  "raw detail"
+);
+assert.equal(getFriendlyProviderErrorMessage({}), "Native bridge check failed.");
 
 console.log("Provider metadata tests passed.");

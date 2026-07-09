@@ -1,4 +1,4 @@
-import { getAllProviderOrigins, getProviderLabel } from "./lib/provider_metadata.js";
+import { getAllProviderOrigins, getFriendlyProviderErrorMessage, getProviderLabel } from "./lib/provider_metadata.js";
 import { pageHintPermissionPatternsForTabs, shouldUsePageHints } from "./lib/page_hints.js";
 import { normalizeSettings } from "./lib/settings.js";
 import { isGroupableTab } from "./lib/tabs.js";
@@ -32,13 +32,13 @@ tidyButton.addEventListener("click", async () => {
 
     if (!response?.ok) {
       updateUndoButton(Boolean(response?.undoAvailable));
-      throw new Error(response?.error || "Unable to tidy tabs.");
+      throw createResponseError(response, "Unable to tidy tabs.");
     }
 
     renderResult(response);
     updateUndoButton(Boolean(response.undoAvailable));
   } catch (error) {
-    renderError(error.message || String(error));
+    renderError(getFriendlyProviderErrorMessage(error));
   } finally {
     setBusy(false);
   }
@@ -58,12 +58,12 @@ previewButton.addEventListener("click", async () => {
     });
 
     if (!response?.ok) {
-      throw new Error(response?.error || "Unable to preview tabs.");
+      throw createResponseError(response, "Unable to preview tabs.");
     }
 
     renderResult(response);
   } catch (error) {
-    renderError(error.message || String(error));
+    renderError(getFriendlyProviderErrorMessage(error));
   } finally {
     setBusy(false);
   }
@@ -80,12 +80,12 @@ undoButton.addEventListener("click", async () => {
       windowId: currentWindow.id
     });
     if (!response?.ok) {
-      throw new Error(response?.error || "Unable to undo last tidy.");
+      throw createResponseError(response, "Unable to undo last tidy.");
     }
     updateUndoButton(Boolean(response.undoAvailable));
     renderMessage(response.message || "Undone.");
   } catch (error) {
-    renderError(error.message || String(error));
+    renderError(getFriendlyProviderErrorMessage(error));
   } finally {
     setBusy(false);
   }
@@ -239,6 +239,12 @@ function buildProviderDetailsHtml(response) {
 
 function updateUndoButton(isAvailable) {
   undoButton.hidden = !isAvailable;
+}
+
+function createResponseError(response, fallbackMessage) {
+  const error = new Error(response?.error || fallbackMessage);
+  error.providerErrorKind = response?.providerErrorKind || "";
+  return error;
 }
 
 function renderMessage(message) {

@@ -58,4 +58,21 @@ assert.deepEqual(
   { id: 7, title: "Issue", domain: "github.com", url: undefined, pageHint: "Title: Codex", context }
 );
 
+{
+  // A single oversized tab must not block the whole batch: the native host
+  // rejects the entire request if any tab's title/domain/url/pageHint exceeds
+  // its per-field cap, so the client must truncate to those same caps rather
+  // than send the raw value through.
+  const oversizedTitle = "x".repeat(400);
+  const oversizedUrl = `https://example.com/${"y".repeat(1100)}`;
+  const oversizedPageHint = "z".repeat(1500);
+  const record = tabToPromptRecord(
+    { id: 9, title: oversizedTitle, url: oversizedUrl, pageHint: oversizedPageHint },
+    { ...baseSettings, includeFullUrls: true, includePageHints: true }
+  );
+  assert.equal(record.title.length, 300);
+  assert.equal(record.url.length, 1000);
+  assert.equal(record.pageHint.length, 1000);
+}
+
 console.log("Tab helper tests passed.");
