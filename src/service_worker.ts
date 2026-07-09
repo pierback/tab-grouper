@@ -1,3 +1,4 @@
+import { Cause, Duration, Effect, Exit, Option, Schedule } from "effect";
 import { createGroupPlanWithFallback } from "./lib/providers.js";
 import { getProviderOrigins } from "./lib/provider_metadata.js";
 import { getCachedPlan, invalidatePlanCache, setCachedPlan } from "./lib/plan_cache.js";
@@ -710,24 +711,29 @@ function countSkipReasons(tabs: chrome.tabs.Tab[], settings: Settings): SkippedC
   return counts;
 }
 
-async function retryChromeTabMutation<T>(callback: () => Promise<T>, attempts = 5): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      return await callback();
-    } catch (error) {
-      lastError = error;
-      if (!String(error instanceof Error ? error.message : error).includes("Tabs cannot be edited right now")) {
-        throw error;
-      }
-      await delay(50 * (attempt + 1));
-    }
-  }
-  throw lastError;
+function isRetryableTabMutationError(error: unknown): boolean {
+  return String(error instanceof Error ? error.message : error).includes("Tabs cannot be edited right now");
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+async function retryChromeTabMutation<T>(callback: () => Promise<T>, attempts = 5): Promise<T> {
+  const attemptEffect = Effect.tryPromise({
+    try: callback,
+    catch: (error) => error
   });
+
+  const retrySchedule = Schedule.recurs(Math.max(0, attempts - 1)).pipe(
+    Schedule.while((metadata) => isRetryableTabMutationError(metadata.input)),
+    Schedule.addDelay((attempt) => Effect.succeed(Duration.millis(50 * (attempt + 1))))
+  );
+
+  const exit = await Effect.runPromiseExit(Effect.retry(attemptEffect, retrySchedule));
+
+  if (Exit.isSuccess(exit)) {
+    return exit.value;
+  }
+  const originalError = Exit.findErrorOption(exit);
+  if (Option.isSome(originalError)) {
+    throw originalError.value;
+  }
+  throw Cause.squash(exit.cause);
 }

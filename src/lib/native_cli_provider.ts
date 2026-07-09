@@ -1,3 +1,4 @@
+import { Cause, Effect, Exit, Option } from "effect";
 import type {
   ExistingGroup,
   LocalCliProvider,
@@ -141,63 +142,67 @@ export async function checkNativeCliStatus(provider: Provider | LocalCliProvider
 }
 
 function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest, timeoutMs: number): Promise<NativeResponse> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    let port: chrome.runtime.Port | undefined;
-    const timeoutId = globalThis.setTimeout(() => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      try {
-        port?.disconnect();
-      } catch {
-        // Ignore disconnect failures during timeout cleanup.
-      }
-      reject(providerError("provider-timeout", "Local CLI provider timed out."));
-    }, timeoutMs + EXTENSION_TIMEOUT_MARGIN_MS);
-
-    const settle = (callback: (value: any) => void, value: NativeResponse | ProviderError) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      globalThis.clearTimeout(timeoutId);
-      callback(value);
-    };
-
+  const portEffect = Effect.callback<NativeResponse, ProviderError>((resume) => {
+    let port: chrome.runtime.Port;
     try {
       port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
     } catch (error) {
-      globalThis.clearTimeout(timeoutId);
-      reject(classifyNativeError(error));
+      resume(Effect.fail(classifyNativeError(error)));
       return;
     }
 
     port.onMessage.addListener((response) => {
       if (!response || response.requestId !== request.requestId || response.type !== RESPONSE_TYPE) {
-        settle(reject, providerError("native-host-protocol-error", "Local CLI bridge returned an unexpected response."));
+        resume(Effect.fail(providerError("native-host-protocol-error", "Local CLI bridge returned an unexpected response.")));
         return;
       }
       if (!response.ok) {
-        settle(reject, providerError(response.error?.kind || "native-host-protocol-error", response.error?.message || "Local CLI bridge failed."));
+        resume(Effect.fail(providerError(response.error?.kind || "native-host-protocol-error", response.error?.message || "Local CLI bridge failed.")));
         return;
       }
-      settle(resolve, response);
+      resume(Effect.succeed(response));
     });
 
     port.onDisconnect.addListener(() => {
-      if (settled) {
-        return;
-      }
-      settle(reject, classifyNativeError(chrome.runtime.lastError));
+      resume(Effect.fail(classifyNativeError(chrome.runtime.lastError)));
     });
 
     try {
       port.postMessage(request);
     } catch (error) {
-      settle(reject, classifyNativeError(error));
+      resume(Effect.fail(classifyNativeError(error)));
+      return;
     }
+
+    // Runs only if the fiber is interrupted (i.e. when the timeout below fires) -
+    // never on a normal resume() completion. Verified empirically before wiring
+    // this in: disconnect() fires exactly once per timeout and zero times on
+    // every other exit path.
+    return Effect.sync(() => {
+      try {
+        port.disconnect();
+      } catch {
+        // Ignore disconnect failures during interruption cleanup.
+      }
+    });
+  });
+
+  const withTimeout = portEffect.pipe(
+    Effect.timeout(timeoutMs + EXTENSION_TIMEOUT_MARGIN_MS),
+    Effect.mapError((error) =>
+      Cause.isTimeoutError(error) ? providerError("provider-timeout", "Local CLI provider timed out.") : error
+    )
+  );
+
+  return Effect.runPromiseExit(withTimeout).then((exit) => {
+    if (Exit.isSuccess(exit)) {
+      return exit.value;
+    }
+    const originalError = Exit.findErrorOption(exit);
+    if (Option.isSome(originalError)) {
+      throw originalError.value;
+    }
+    throw Cause.squash(exit.cause);
   });
 }
 

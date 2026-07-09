@@ -342,8 +342,12 @@ const tabs = [
       createPlanWithNativeCli(tabs, { minimumGroupSize: 2 }, "codex"),
       (error) => providerError(error).providerErrorKind === "native-host-protocol-error"
     );
-    assert.equal(scheduledTimeout, true);
-    assert.equal(clearedTimeout, true);
+    // Effect's timeout race never schedules its own timer at all when the raced
+    // effect (the postMessage throw here) already settled synchronously - there
+    // is nothing to leak, which is a stronger guarantee than the old
+    // always-schedule-then-clear implementation this test originally covered.
+    assert.equal(scheduledTimeout, false);
+    assert.equal(clearedTimeout, false);
   } finally {
     globalThis.setTimeout = originalSetTimeout;
     globalThis.clearTimeout = originalClearTimeout;
