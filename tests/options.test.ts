@@ -421,14 +421,61 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
 }
 
 {
+  const { elements, chrome } = await importOptions({
+    stored: {
+      provider: "local-codex-cli",
+      codexCliModel: "gpt-5.4-mini"
+    },
+    nativeModels: [
+      { slug: "gpt-5.5", displayName: "GPT-5.5" },
+      { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini" }
+    ]
+  });
+  await Promise.resolve();
+  assert.deepEqual(chrome.__state.permissionRequests, []);
+  assert.deepEqual(chrome.__state.sentNativeMessages, []);
+  assert.equal(elements.model.value, "");
+  assert.deepEqual(elements.model.children.map((option) => [option.value, option.textContent]), [
+    ["", "Use codex CLI's own default"]
+  ]);
+  assert.equal(elements["native-bridge-status"].textContent, "Select this provider again or Save to load Codex models.");
+  assert.equal(elements["native-bridge-status"].classList.contains("error-text"), false);
+}
+
+{
+  const { elements, chrome } = await importOptions({
+    nativeModels: [
+      { slug: "gpt-5.5", displayName: "GPT-5.5" },
+      { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini" }
+    ]
+  });
+  elements.provider.value = "local-codex-cli";
+  await elements.provider.dispatch("change");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(chrome.__state.permissionRequests, [{ permissions: ["nativeMessaging"] }]);
+  assert.equal(chrome.__state.sentNativeMessages[0]!.type, "NATIVE_HOST_LIST_MODELS_REQUEST");
+  assert.equal(chrome.__state.sentNativeMessages[0]!.provider, "codex");
+  assert.equal(elements.model.value, "");
+  assert.deepEqual(elements.model.children.map((option) => [option.value, option.textContent]), [
+    ["", "Use codex CLI's own default"],
+    ["gpt-5.5", "GPT-5.5"],
+    ["gpt-5.4-mini", "GPT-5.4-Mini"]
+  ]);
+  assert.equal(elements["native-bridge-status"].textContent, "");
+  assert.equal(elements["native-bridge-status"].classList.contains("error-text"), false);
+}
+
+{
   const { elements, chrome } = await importOptions();
   elements.provider.value = "local-codex-cli";
   await elements.provider.dispatch("change");
   await elements["test-native-bridge"].dispatch("click");
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(chrome.__state.permissionRequests, [{ permissions: ["nativeMessaging"] }]);
-  assert.equal(chrome.__state.sentNativeMessages[0]!.type, "NATIVE_HOST_STATUS_REQUEST");
+  assert.deepEqual(chrome.__state.permissionRequests, [{ permissions: ["nativeMessaging"] }, { permissions: ["nativeMessaging"] }]);
+  assert.equal(chrome.__state.sentNativeMessages[0]!.type, "NATIVE_HOST_LIST_MODELS_REQUEST");
   assert.equal(chrome.__state.sentNativeMessages[0]!.provider, "codex");
+  assert.equal(chrome.__state.sentNativeMessages[1]!.type, "NATIVE_HOST_STATUS_REQUEST");
+  assert.equal(chrome.__state.sentNativeMessages[1]!.provider, "codex");
   assert.equal(elements["native-bridge-status"].textContent, "Codex CLI bridge is ready.");
   assert.equal(elements["native-bridge-status"].classList.contains("error-text"), false);
 }

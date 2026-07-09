@@ -36,7 +36,7 @@ initOptions();
 providerSelect.addEventListener("change", async () => {
   const provider = providerSelect.value;
   updateProviderSections(provider);
-  await populateModelSelect(provider, currentSettings);
+  await populateModelSelect(provider, currentSettings, true);
   updateDataScope();
 });
 
@@ -62,6 +62,7 @@ form.addEventListener("submit", async (event) => {
     await saveSettings(settings);
     currentSettings = settings;
     await removeUnusedProviderPermissions(settings.provider);
+    await populateModelSelect(settings.provider, settings, false);
     updateDataScope(settings);
     setSaveStatus("Saved", false);
     window.setTimeout(() => {
@@ -87,7 +88,7 @@ async function initOptions() {
     }
   }
   updateProviderSections(settings.provider);
-  await populateModelSelect(settings.provider, settings);
+  await populateModelSelect(settings.provider, settings, false);
   updateDataScope(settings);
 }
 
@@ -136,7 +137,7 @@ function readFormSettings(): PartialSettings {
   };
 }
 
-async function populateModelSelect(provider: string, settings: Settings): Promise<void> {
+async function populateModelSelect(provider: string, settings: Settings, allowPermissionRequest = false): Promise<void> {
   const sequence = ++modelLoadSequence;
   if (!isLocalCliProvider(provider)) {
     replaceModelOptions("Use CLI default", [], "");
@@ -153,6 +154,30 @@ async function populateModelSelect(provider: string, settings: Settings): Promis
   replaceModelOptions("Use codex CLI's own default", [], settings.codexCliModel, "Loading Codex models...");
   modelSelect.disabled = true;
   setNativeBridgeStatus("Loading Codex models...", false);
+  if (allowPermissionRequest) {
+    try {
+      await ensureProviderPermission(provider);
+      if (sequence !== modelLoadSequence) {
+        return;
+      }
+    } catch {
+      if (sequence === modelLoadSequence) {
+        replaceModelOptions("Use codex CLI's own default", [], "");
+        setNativeBridgeStatus("Grant native messaging access to load Codex models.", false);
+        modelSelect.disabled = false;
+      }
+      return;
+    }
+  } else if (!(await hasNativeMessagingPermission())) {
+    if (sequence !== modelLoadSequence) {
+      return;
+    }
+    replaceModelOptions("Use codex CLI's own default", [], "");
+    setNativeBridgeStatus("Select this provider again or Save to load Codex models.", false);
+    modelSelect.disabled = false;
+    return;
+  }
+
   try {
     const models = await listNativeModels("codex");
     if (sequence !== modelLoadSequence) {
@@ -227,6 +252,13 @@ async function ensureProviderPermission(provider: string): Promise<void> {
   if (!granted) {
     throw new Error("Provider permission was not granted. Choose Local heuristic or grant provider access.");
   }
+}
+
+async function hasNativeMessagingPermission(): Promise<boolean> {
+  if (!chrome.permissions?.contains) {
+    return false;
+  }
+  return chrome.permissions.contains({ permissions: ["nativeMessaging"] });
 }
 
 async function testNativeBridge() {
