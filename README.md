@@ -10,8 +10,8 @@ This is an MVP prototype. It avoids automating Claude.ai, ChatGPT, or Codex web 
 
 The extension is written in TypeScript and needs a one-time build before loading:
 
-1. Run `pnpm install` (installs the TypeScript/esbuild toolchain).
-2. Run `pnpm run build` (compiles `src/*.ts` into `dist/*.js`; re-run this after any source change - `pnpm run build:watch` rebuilds automatically).
+1. Run `nub install` (installs the TypeScript/esbuild toolchain).
+2. Run `nub run build` (compiles `src/*.ts` into `dist/*.js`; re-run this after any source change - `nub run build:watch` rebuilds automatically).
 3. Open `chrome://extensions`.
 4. Enable **Developer mode**.
 5. Click **Load unpacked**.
@@ -25,7 +25,7 @@ The default provider is `Local heuristic`, so the extension works without an API
 To use `Local Codex CLI` or `Local Claude Code CLI`, install the native host after loading the unpacked extension:
 
 ```sh
-pnpm run native:install -- --extension-id <id-from-chrome-extensions>
+nub run native:install -- --extension-id <id-from-chrome-extensions>
 ```
 
 The extension ID is shown on the extension card in `chrome://extensions` when Developer mode is enabled. The installer builds the Go native host and writes the Chrome Native Messaging manifest for `com.fabianpieringer.tab_grouper`.
@@ -35,7 +35,7 @@ For Brave, Edge, Chromium, or Chrome Canary on macOS, pass `--browser brave`, `-
 The installer also writes a locked native-host config beside the built binary with the discovered `codex` and `claude` executable paths. If either CLI is installed somewhere unusual, pass explicit paths:
 
 ```sh
-pnpm run native:install -- --extension-id <id-from-chrome-extensions> --codex-path /path/to/codex --claude-path /path/to/claude
+nub run native:install -- --extension-id <id-from-chrome-extensions> --codex-path /path/to/codex --claude-path /path/to/claude
 ```
 
 After choosing `Local Codex CLI` or `Local Claude Code CLI` in Options, use **Test bridge** to verify Native Messaging, the pinned CLI path, and sign-in state without running a model request.
@@ -81,7 +81,7 @@ OpenAI and Anthropic network permissions are optional Chrome host permissions. L
 ## Test
 
 ```sh
-pnpm test
+nub run test
 ```
 
 This runs JavaScript tests, manifest validation, Go native-host tests, and a framed native-host E2E smoke test with a fake pinned Codex executable.
@@ -89,7 +89,7 @@ This runs JavaScript tests, manifest validation, Go native-host tests, and a fra
 ## Chrome smoke test
 
 ```sh
-pnpm run smoke:chrome
+nub run smoke:chrome
 ```
 
 The smoke test opens a temporary Chrome profile, loads a temporary unpacked copy of this extension through Chrome DevTools Protocol, verifies heuristic tidy/undo, installs a temporary Native Messaging host with a fake pinned Codex executable, verifies local Codex provider tidy/undo with superficial page hints, then restores the Chrome native-host manifest. Set `CHROME_PATH` if Chrome is installed somewhere other than `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`.
