@@ -30,7 +30,13 @@ nub run native:install
 
 The installer derives the pinned extension ID from `manifest.json`, builds the Go native host, and writes the Chrome Native Messaging manifest for `com.fabianpieringer.tab_grouper`.
 
-For Brave, Edge, Chromium, Chrome Canary, or Helium on macOS, pass `--browser brave`, `--browser edge`, `--browser chromium`, `--browser chrome-canary`, or `--browser helium` (Helium path unverified).
+To install the shared native host for every supported Chromium browser in one step, run:
+
+```sh
+nub run native:install --browser all
+```
+
+To target only one browser, pass `--browser chrome`, `--browser brave`, `--browser edge`, `--browser chromium`, `--browser chrome-canary`, or `--browser helium` (Helium path unverified).
 
 The installer also writes a locked native-host config beside the built binary with the discovered `codex` and `claude` executable paths. If either CLI is installed somewhere unusual, pass explicit paths:
 

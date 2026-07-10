@@ -6,17 +6,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extensionIdFromManifestKey } from "./lib/extension_id.mjs";
+import { resolveBrowserManifestTargets } from "./lib/native_host_browsers.mjs";
 
 const NATIVE_HOST_NAME = "com.fabianpieringer.tab_grouper";
-const BROWSER_MANIFEST_DIRS = {
-  chrome: ["Google", "Chrome"],
-  "chrome-canary": ["Google", "Chrome Canary"],
-  chromium: ["Chromium"],
-  brave: ["BraveSoftware", "Brave-Browser"],
-  // Unverified best-effort guess; correct if this differs from a real Helium install.
-  helium: ["Helium"],
-  edge: ["Microsoft Edge"]
-};
 
 const args = parseArgs(process.argv.slice(2));
 const browser = args.browser || "chrome";
@@ -37,10 +29,7 @@ if (process.platform !== "darwin") {
   throw new Error("This installer currently supports macOS Chrome-family browsers only.");
 }
 
-const browserDirParts = BROWSER_MANIFEST_DIRS[browser];
-if (!browserDirParts) {
-  throw new Error(`Unsupported browser "${browser}". Supported: ${Object.keys(BROWSER_MANIFEST_DIRS).join(", ")}.`);
-}
+const browserTargets = resolveBrowserManifestTargets(browser);
 
 const nativeHostDir = path.join(root, "native-host");
 const binaryDir = path.join(nativeHostDir, "bin");
@@ -65,30 +54,32 @@ fs.writeFileSync(
 );
 const daemonRestartResult = restartNativeHostDaemon(binaryPath);
 
-const manifestDir = path.join(
-  os.homedir(),
-  "Library",
-  "Application Support",
-  ...browserDirParts,
-  "NativeMessagingHosts"
-);
-const manifestPath = path.join(manifestDir, `${NATIVE_HOST_NAME}.json`);
-fs.mkdirSync(manifestDir, { recursive: true });
-fs.writeFileSync(
-  manifestPath,
-  `${JSON.stringify({
-    name: NATIVE_HOST_NAME,
-    description: "Tab Grouper local Codex/Claude CLI bridge",
-    path: binaryPath,
-    type: "stdio",
-    allowed_origins: [`chrome-extension://${extensionId}/`]
-  }, null, 2)}\n`,
-  { mode: 0o644 }
-);
+const manifestContents = `${JSON.stringify({
+  name: NATIVE_HOST_NAME,
+  description: "Tab Grouper local Codex/Claude CLI bridge",
+  path: binaryPath,
+  type: "stdio",
+  allowed_origins: [`chrome-extension://${extensionId}/`]
+}, null, 2)}\n`;
+const installedManifests = browserTargets.map((target) => {
+  const manifestDir = path.join(
+    os.homedir(),
+    "Library",
+    "Application Support",
+    ...target.manifestDirParts,
+    "NativeMessagingHosts"
+  );
+  const manifestPath = path.join(manifestDir, `${NATIVE_HOST_NAME}.json`);
+  fs.mkdirSync(manifestDir, { recursive: true });
+  fs.writeFileSync(manifestPath, manifestContents, { mode: 0o644 });
+  return { ...target, manifestPath };
+});
 
 console.log(`Built native host: ${binaryPath}`);
 console.log(`Wrote native host config: ${configPath}`);
-console.log(`Installed Native Messaging manifest: ${manifestPath}`);
+for (const target of installedManifests) {
+  console.log(`Installed ${target.label} Native Messaging manifest: ${target.manifestPath}`);
+}
 if (daemonRestartResult.restarted) {
   console.log("Restarted native host daemon (old daemon terminated; a fresh one will start on next use).");
 } else if (!daemonRestartResult.failed) {
@@ -102,9 +93,10 @@ if (!claudeExecutable) {
 }
 
 function parseArgs(rawArgs) {
+  const args = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs;
   const parsed = {};
-  for (let index = 0; index < rawArgs.length; index += 1) {
-    const arg = rawArgs[index];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
     if (arg === "--help" || arg === "-h") {
       parsed.help = true;
       continue;
@@ -118,7 +110,7 @@ function parseArgs(rawArgs) {
       continue;
     }
     const key = arg.slice(2);
-    const value = rawArgs[index + 1];
+    const value = args[index + 1];
     if (!value || value.startsWith("--")) {
       throw new Error(`Missing value for ${arg}`);
     }
@@ -231,10 +223,12 @@ function readExtensionIdFromManifest(rootDir) {
 function printUsage() {
   console.log(`Usage:
   nub run native:install
+  nub run native:install --browser all
   nub run native:install --browser brave
   nub run native:install --codex-path /path/to/codex --claude-path /path/to/claude
   nub run native:install --extension-id <chrome-extension-id>
 
 By default the installer derives the extension ID from manifest.json's key field.
+Pass --browser all to install for Chrome, Brave, Edge, Chromium, Chrome Canary, and Helium.
 Pass --extension-id to override it for another loaded extension.`);
 }

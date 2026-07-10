@@ -8,7 +8,7 @@
     "build": "node scripts/build.mjs",
     "build:watch": "nub run build -- --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "test": "nub run typecheck && nub run build && tsx tests/schema.test.ts && tsx tests/settings.test.ts && tsx tests/tabs.test.ts && tsx tests/page_hints.test.ts && tsx tests/hint_cache.test.ts && tsx tests/heuristics.test.ts && tsx tests/undo.test.ts && tsx tests/native_cli_provider.test.ts && tsx tests/providers.test.ts && tsx tests/provider_metadata.test.ts && tsx tests/plan_response.test.ts && tsx tests/plan_cache.test.ts && tsx tests/service_worker.test.ts && tsx tests/popup.test.ts && tsx tests/options.test.ts && node scripts/validate-extension.mjs && nub run test:go && nub run test:native-host-e2e",
+    "test": "nub run typecheck && nub run build && tsx tests/schema.test.ts && tsx tests/settings.test.ts && tsx tests/tabs.test.ts && tsx tests/page_hints.test.ts && tsx tests/hint_cache.test.ts && tsx tests/heuristics.test.ts && tsx tests/undo.test.ts && tsx tests/native_cli_provider.test.ts && node tests/install_native_host.test.mjs && tsx tests/providers.test.ts && tsx tests/provider_metadata.test.ts && tsx tests/plan_response.test.ts && tsx tests/plan_cache.test.ts && tsx tests/service_worker.test.ts && tsx tests/popup.test.ts && tsx tests/options.test.ts && node scripts/validate-extension.mjs && nub run test:go && nub run test:native-host-e2e",
     "test:go": "cd native-host && go test ./...",
     "test:native-host-e2e": "node scripts/test-native-host-e2e.mjs",
     "native:install": "node scripts/install-native-host.mjs",
