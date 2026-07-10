@@ -231,9 +231,9 @@ function readExtensionIdFromManifest(rootDir) {
 function printUsage() {
   console.log(`Usage:
   nub run native:install
-  nub run native:install -- --browser brave
-  nub run native:install -- --codex-path /path/to/codex --claude-path /path/to/claude
-  nub run native:install -- --extension-id <chrome-extension-id>
+  nub run native:install --browser brave
+  nub run native:install --codex-path /path/to/codex --claude-path /path/to/claude
+  nub run native:install --extension-id <chrome-extension-id>
 
 By default the installer derives the extension ID from manifest.json's key field.
 Pass --extension-id to override it for another loaded extension.`);

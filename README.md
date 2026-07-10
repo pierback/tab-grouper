@@ -35,7 +35,7 @@ For Brave, Edge, Chromium, Chrome Canary, or Helium on macOS, pass `--browser br
 The installer also writes a locked native-host config beside the built binary with the discovered `codex` and `claude` executable paths. If either CLI is installed somewhere unusual, pass explicit paths:
 
 ```sh
-nub run native:install -- --codex-path /path/to/codex --claude-path /path/to/claude
+nub run native:install --codex-path /path/to/codex --claude-path /path/to/claude
 ```
 
 Pass `--extension-id <chrome-extension-id>` only when intentionally installing the native host for a different loaded extension.
