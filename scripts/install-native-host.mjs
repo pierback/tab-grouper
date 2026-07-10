@@ -49,7 +49,7 @@ const configPath = `${binaryPath}.config.json`;
 const codexExecutable = resolveExecutablePath(args["codex-path"] || "codex");
 const claudeExecutable = resolveExecutablePath(args["claude-path"] || "claude");
 
-run("pnpm", ["run", "build"], root);
+run("nub", ["run", "build"], root);
 
 fs.mkdirSync(binaryDir, { recursive: true });
 run("go", ["build", "-o", binaryPath, "."], nativeHostDir);
@@ -230,10 +230,10 @@ function readExtensionIdFromManifest(rootDir) {
 
 function printUsage() {
   console.log(`Usage:
-  pnpm run native:install
-  pnpm run native:install -- --browser brave
-  pnpm run native:install -- --codex-path /path/to/codex --claude-path /path/to/claude
-  pnpm run native:install -- --extension-id <chrome-extension-id>
+  nub run native:install
+  nub run native:install -- --browser brave
+  nub run native:install -- --codex-path /path/to/codex --claude-path /path/to/claude
+  nub run native:install -- --extension-id <chrome-extension-id>
 
 By default the installer derives the extension ID from manifest.json's key field.
 Pass --extension-id to override it for another loaded extension.`);

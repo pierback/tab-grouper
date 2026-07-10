@@ -10,8 +10,8 @@ This is an MVP prototype. It avoids automating Claude.ai, ChatGPT, or Codex web 
 
 The extension is written in TypeScript and needs a one-time build before loading:
 
-1. Run `pnpm install` (installs the TypeScript/esbuild toolchain).
-2. Run `pnpm run build` (compiles `src/*.ts` into `dist/*.js`; re-run this after any source change - `pnpm run build:watch` rebuilds automatically).
+1. Run `nub install` (installs the TypeScript/esbuild toolchain).
+2. Run `nub run build` (compiles `src/*.ts` into `dist/*.js`; re-run this after any source change - `nub run build:watch` rebuilds automatically).
 3. Open `chrome://extensions`.
 4. Enable **Developer mode**.
 5. Click **Load unpacked**.
@@ -25,7 +25,7 @@ The default provider is `Local heuristic`, so the extension works without an API
 To use `Local Codex CLI` or `Local Claude Code CLI`, install the native host after loading the unpacked extension:
 
 ```sh
-pnpm run native:install
+nub run native:install
 ```
 
 The installer derives the pinned extension ID from `manifest.json`, builds the Go native host, and writes the Chrome Native Messaging manifest for `com.fabianpieringer.tab_grouper`.
@@ -35,12 +35,12 @@ For Brave, Edge, Chromium, Chrome Canary, or Helium on macOS, pass `--browser br
 The installer also writes a locked native-host config beside the built binary with the discovered `codex` and `claude` executable paths. If either CLI is installed somewhere unusual, pass explicit paths:
 
 ```sh
-pnpm run native:install -- --codex-path /path/to/codex --claude-path /path/to/claude
+nub run native:install -- --codex-path /path/to/codex --claude-path /path/to/claude
 ```
 
 Pass `--extension-id <chrome-extension-id>` only when intentionally installing the native host for a different loaded extension.
 
-The native host binary itself is just a thin per-connection proxy: the first request from any browser auto-starts one shared background daemon (a Unix socket under `/tmp`, named from a hash of this checkout's path), which every subsequent request from any browser reuses. There's nothing to start or manage manually; the daemon shuts itself down after 30 minutes of inactivity, and `pnpm run native:install` restarts it so binary updates take effect immediately.
+The native host binary itself is just a thin per-connection proxy: the first request from any browser auto-starts one shared background daemon (a Unix socket under `/tmp`, named from a hash of this checkout's path), which every subsequent request from any browser reuses. There's nothing to start or manage manually; the daemon shuts itself down after 30 minutes of inactivity, and `nub run native:install` restarts it so binary updates take effect immediately.
 
 After choosing `Local Codex CLI` or `Local Claude Code CLI` in Options, use **Test bridge** to verify Native Messaging, the pinned CLI path, and sign-in state without running a model request.
 
@@ -85,7 +85,7 @@ OpenAI and Anthropic network permissions are optional Chrome host permissions. L
 ## Test
 
 ```sh
-pnpm test
+nub run test
 ```
 
 This runs JavaScript tests, manifest validation, Go native-host tests, and a framed native-host E2E smoke test with a fake pinned Codex executable.
@@ -93,7 +93,7 @@ This runs JavaScript tests, manifest validation, Go native-host tests, and a fra
 ## Chrome smoke test
 
 ```sh
-pnpm run smoke:chrome
+nub run smoke:chrome
 ```
 
 The smoke test opens a temporary Chrome profile, loads a temporary unpacked copy of this extension through Chrome DevTools Protocol, verifies heuristic tidy/undo, installs a temporary Native Messaging host with a fake pinned Codex executable, verifies local Codex provider tidy/undo with superficial page hints, then restores the Chrome native-host manifest. Set `CHROME_PATH` if Chrome is installed somewhere other than `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`.
