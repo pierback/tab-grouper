@@ -60,6 +60,7 @@ interface NativeStatus {
 }
 
 interface NativeMessage {
+  version: number;
   requestId: string;
   type: string;
   provider?: string;
@@ -76,6 +77,9 @@ interface ImportOptionsConfig {
     supportedReasoningLevels?: string[];
     defaultReasoningLevel?: string;
   }>;
+  deferPermissionRequests?: boolean;
+  deferNativeModelResponses?: boolean;
+  deferStorageWrites?: boolean;
 }
 
 async function importOptions({
@@ -83,10 +87,22 @@ async function importOptions({
   nativePermissionGranted = false,
   stored = {},
   nativeStatus = null,
-  nativeModels = []
+  nativeModels = [],
+  deferPermissionRequests = false,
+  deferNativeModelResponses = false,
+  deferStorageWrites = false
 }: ImportOptionsConfig = {}) {
   const elements = createFakeElements();
-  const fakeChrome = createFakeChrome({ permissionGrant, nativePermissionGranted, stored, nativeStatus, nativeModels });
+  const fakeChrome = createFakeChrome({
+    permissionGrant,
+    nativePermissionGranted,
+    stored,
+    nativeStatus,
+    nativeModels,
+    deferPermissionRequests,
+    deferNativeModelResponses,
+    deferStorageWrites
+  });
   globalThis.chrome = fakeChrome as unknown as typeof globalThis.chrome;
   globalThis.document = createFakeDocument(elements) as unknown as Document;
   globalThis.window = {
@@ -248,12 +264,24 @@ function createFakeDocument(elements: FakeElements) {
   };
 }
 
-function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, nativeStatus, nativeModels }: Required<ImportOptionsConfig>) {
+function createFakeChrome({
+  permissionGrant,
+  nativePermissionGranted,
+  stored,
+  nativeStatus,
+  nativeModels,
+  deferPermissionRequests,
+  deferNativeModelResponses,
+  deferStorageWrites
+}: Required<ImportOptionsConfig>) {
   const state = {
     storage: { ...stored },
     permissionRequests: [] as chrome.permissions.Permissions[],
     permissionRemovals: [] as chrome.permissions.Permissions[],
     sentNativeMessages: [] as NativeMessage[],
+    pendingPermissionRequests: [] as Array<() => void>,
+    pendingNativeModelResponses: [] as Array<() => void>,
+    pendingStorageWrites: [] as Array<() => void>,
     nativePermissionGranted
   };
   return {
@@ -264,6 +292,9 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
           return { ...defaults, ...state.storage };
         },
         async set(values: Record<string, unknown>) {
+          if (deferStorageWrites) {
+            await new Promise<void>((resolve) => state.pendingStorageWrites.push(resolve));
+          }
           Object.assign(state.storage, values);
         }
       }
@@ -271,6 +302,9 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
     permissions: {
       async request(request: chrome.permissions.Permissions) {
         state.permissionRequests.push(request);
+        if (deferPermissionRequests) {
+          await new Promise<void>((resolve) => state.pendingPermissionRequests.push(resolve));
+        }
         if (permissionGrant && request.permissions?.includes("nativeMessaging")) {
           state.nativePermissionGranted = true;
         }
@@ -308,11 +342,11 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
           },
           postMessage(message: NativeMessage) {
             state.sentNativeMessages.push(message);
-            setTimeout(() => {
+            const respond = () => {
               for (const callback of messageListeners) {
                 if (message.type === "NATIVE_HOST_LIST_MODELS_REQUEST") {
                   callback({
-                    version: 1,
+                    version: 2,
                     type: "TAB_GROUP_PLAN_RESPONSE",
                     requestId: message.requestId,
                     ok: true,
@@ -322,7 +356,7 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
                   continue;
                 }
                 callback({
-                  version: 1,
+                  version: 2,
                   type: "TAB_GROUP_PLAN_RESPONSE",
                   requestId: message.requestId,
                   ok: true,
@@ -337,7 +371,12 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
                   }
                 });
               }
-            }, 0);
+            };
+            if (message.type === "NATIVE_HOST_LIST_MODELS_REQUEST" && deferNativeModelResponses) {
+              state.pendingNativeModelResponses.push(respond);
+              return;
+            }
+            setTimeout(respond, 0);
           },
           disconnect() {
             for (const callback of disconnectListeners) {
@@ -348,6 +387,16 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
       }
     }
   };
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  assert.fail("Timed out waiting for test state.");
 }
 
 {
@@ -481,7 +530,7 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
 {
   const { elements, chrome } = await importOptions({
     nativeModels: [
-      { slug: "gpt-5.5", displayName: "GPT-5.5", supportedReasoningLevels: ["low", "medium", "high", "xhigh"], defaultReasoningLevel: "xhigh" },
+      { slug: "gpt-5.5", displayName: "GPT-5.5", supportedReasoningLevels: ["high", "xhigh"], defaultReasoningLevel: "xhigh" },
       { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini", supportedReasoningLevels: ["low", "medium"], defaultReasoningLevel: "medium" }
     ]
   });
@@ -499,7 +548,7 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
   ]);
   assert.equal(elements.reasoning.value, "");
   assert.deepEqual(elements.reasoning.children.map((option) => [option.value, option.textContent]), [
-    ["", "Use codex CLI's default (xhigh)"],
+    ["", "Use codex CLI's default"],
     ["low", "low"],
     ["medium", "medium"],
     ["high", "high"],
@@ -514,6 +563,109 @@ function createFakeChrome({ permissionGrant, nativePermissionGranted, stored, na
   ]);
   assert.equal(elements["native-bridge-status"].textContent, "");
   assert.equal(elements["native-bridge-status"].classList.contains("error-text"), false);
+}
+
+{
+  const { elements, chrome } = await importOptions({
+    stored: {
+      provider: "local-claude-cli",
+      codexCliModel: "gpt-5.4-mini",
+      codexReasoningEffort: "high",
+      claudeReasoningEffort: "max"
+    },
+    deferPermissionRequests: true
+  });
+  elements.provider.value = "local-codex-cli";
+  const providerChange = elements.provider.dispatch("change");
+  assert.equal(elements.reasoning.disabled, true);
+  assert.equal(elements.reasoning.value, "");
+
+  const save = elements["settings-form"].dispatch("submit");
+  await waitUntil(() => chrome.__state.pendingPermissionRequests.length === 2);
+  for (const resolve of chrome.__state.pendingPermissionRequests.splice(0)) {
+    resolve();
+  }
+  await Promise.all([providerChange, save]);
+  assert.equal(chrome.__state.storage.codexCliModel, "gpt-5.4-mini");
+  assert.equal(chrome.__state.storage.codexReasoningEffort, "high");
+}
+
+{
+  const { elements, chrome } = await importOptions({
+    stored: {
+      provider: "local-claude-cli",
+      claudeReasoningEffort: "max"
+    },
+    nativeModels: [
+      { slug: "gpt-5.5", displayName: "GPT-5.5", supportedReasoningLevels: ["low", "medium", "high", "xhigh"], defaultReasoningLevel: "xhigh" }
+    ],
+    deferNativeModelResponses: true
+  });
+  elements.provider.value = "local-codex-cli";
+  const codexChange = elements.provider.dispatch("change");
+  await waitUntil(() => chrome.__state.pendingNativeModelResponses.length === 1);
+
+  elements.provider.value = "local-claude-cli";
+  await elements.provider.dispatch("change");
+  assert.equal(elements.reasoning.value, "max");
+  const claudeReasoningOptions = elements.reasoning.children.map((option) => [option.value, option.textContent]);
+
+  chrome.__state.pendingNativeModelResponses.shift()!();
+  await codexChange;
+  assert.equal(elements.provider.value, "local-claude-cli");
+  assert.equal(elements.reasoning.value, "max");
+  assert.deepEqual(elements.reasoning.children.map((option) => [option.value, option.textContent]), claudeReasoningOptions);
+  assert.equal(elements.reasoning.disabled, false);
+}
+
+{
+  const { elements, chrome } = await importOptions({
+    stored: {
+      provider: "heuristic",
+      claudeCliModel: "claude-sonnet-5",
+      claudeReasoningEffort: "max"
+    },
+    deferStorageWrites: true
+  });
+  const save = elements["settings-form"].dispatch("submit");
+  await waitUntil(() => chrome.__state.pendingStorageWrites.length === 1);
+
+  elements.provider.value = "local-claude-cli";
+  await elements.provider.dispatch("change");
+  assert.equal(elements.model.value, "claude-sonnet-5");
+  assert.equal(elements.reasoning.value, "max");
+
+  chrome.__state.pendingStorageWrites.shift()!();
+  await save;
+  assert.equal(chrome.__state.storage.provider, "heuristic");
+  assert.equal(elements.provider.value, "local-claude-cli");
+  assert.equal(elements.model.value, "claude-sonnet-5");
+  assert.equal(elements.reasoning.value, "max");
+  assert.equal(elements["data-mode"].textContent, "Local CLI account");
+  assert.equal(elements["save-status"].textContent, "Settings changed while saving. Save again.");
+  assert.equal(elements["save-status"].classList.contains("error-text"), true);
+}
+
+{
+  const { elements, chrome } = await importOptions({
+    stored: {
+      provider: "heuristic",
+      minimumGroupSize: 2
+    },
+    deferStorageWrites: true
+  });
+  const save = elements["settings-form"].dispatch("submit");
+  await waitUntil(() => chrome.__state.pendingStorageWrites.length === 1);
+
+  elements.minimumGroupSize.value = "4";
+  await elements["settings-form"].dispatch("input");
+  chrome.__state.pendingStorageWrites.shift()!();
+  await save;
+
+  assert.equal(chrome.__state.storage.minimumGroupSize, 2);
+  assert.equal(elements.minimumGroupSize.value, "4");
+  assert.equal(elements["save-status"].textContent, "Settings changed while saving. Save again.");
+  assert.equal(elements["save-status"].classList.contains("error-text"), true);
 }
 
 {

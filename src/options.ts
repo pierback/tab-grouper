@@ -33,22 +33,27 @@ const CLAUDE_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
 let currentSettings: Settings = DEFAULT_SETTINGS;
 let codexModels: NativeModelInfo[] = [];
-let modelLoadSequence = 0;
+let localCliControlSequence = 0;
+let formRevision = 0;
 
 initOptions();
 
 providerSelect.addEventListener("change", async () => {
   const provider = providerSelect.value;
   updateProviderSections(provider);
-  await populateModelSelect(provider, currentSettings, true);
-  populateReasoningSelect(provider, currentSettings);
+  await refreshLocalCliControls(provider, currentSettings, true);
   updateDataScope();
 });
 
 modelSelect.addEventListener("change", () => {
+  localCliControlSequence += 1;
   if (providerSelect.value === "local-codex-cli") {
     populateReasoningSelect(providerSelect.value, normalizeSettings(readFormSettings()));
   }
+});
+
+reasoningSelect.addEventListener("change", () => {
+  localCliControlSequence += 1;
 });
 
 includeFullUrlsInput.addEventListener("change", () => {
@@ -63,23 +68,39 @@ testNativeBridgeButton?.addEventListener("click", async () => {
   await testNativeBridge();
 });
 
+form.addEventListener("input", () => {
+  formRevision += 1;
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   setSaveStatus("Saving...", false);
 
   try {
     const settings = normalizeSettings(readFormSettings());
+    const controlSequence = localCliControlSequence;
+    const revision = formRevision;
     await ensureProviderPermission(settings.provider);
     await saveSettings(settings);
     currentSettings = settings;
     await removeUnusedProviderPermissions(settings.provider);
-    await populateModelSelect(settings.provider, settings, false);
-    populateReasoningSelect(settings.provider, settings);
-    updateDataScope(settings);
-    setSaveStatus("Saved", false);
-    window.setTimeout(() => {
-      saveStatus.textContent = "";
-    }, 1800);
+    let expectedControlSequence = controlSequence;
+    if (providerSelect.value === settings.provider && localCliControlSequence === controlSequence) {
+      expectedControlSequence += 1;
+      await refreshLocalCliControls(settings.provider, settings, false);
+    }
+    updateDataScope();
+    const currentFormWasSaved = formRevision === revision &&
+      providerSelect.value === settings.provider &&
+      localCliControlSequence === expectedControlSequence;
+    if (currentFormWasSaved) {
+      setSaveStatus("Saved", false);
+      window.setTimeout(() => {
+        saveStatus.textContent = "";
+      }, 1800);
+    } else {
+      setSaveStatus("Settings changed while saving. Save again.", true);
+    }
   } catch (error) {
     setSaveStatus(error instanceof Error ? error.message : String(error), true);
   }
@@ -100,8 +121,7 @@ async function initOptions() {
     }
   }
   updateProviderSections(settings.provider);
-  await populateModelSelect(settings.provider, settings, false);
-  populateReasoningSelect(settings.provider, settings);
+  await refreshLocalCliControls(settings.provider, settings, false);
   updateDataScope(settings);
 }
 
@@ -131,8 +151,10 @@ function updateDataScope(settings = readCurrentScopeSettings()): void {
 function readFormSettings(): PartialSettings {
   const formData = new FormData(form);
   const provider = String(formData.get("provider") || DEFAULT_SETTINGS.provider) as Provider;
-  const localCliModel = String(modelSelect.value || "").trim();
-  const localCliReasoningEffort = String(reasoningSelect.value || "").trim();
+  const storedLocalCliModel = provider === "local-codex-cli" ? currentSettings.codexCliModel : currentSettings.claudeCliModel;
+  const storedLocalCliReasoningEffort = provider === "local-codex-cli" ? currentSettings.codexReasoningEffort : currentSettings.claudeReasoningEffort;
+  const localCliModel = modelSelect.disabled ? storedLocalCliModel : String(modelSelect.value || "").trim();
+  const localCliReasoningEffort = reasoningSelect.disabled ? storedLocalCliReasoningEffort : String(reasoningSelect.value || "").trim();
   return {
     provider,
     openaiApiKey: String(formData.get("openaiApiKey") || ""),
@@ -153,70 +175,74 @@ function readFormSettings(): PartialSettings {
   };
 }
 
-async function populateModelSelect(provider: string, settings: Settings, allowPermissionRequest = false): Promise<void> {
-  const sequence = ++modelLoadSequence;
+async function refreshLocalCliControls(provider: string, settings: Settings, allowPermissionRequest = false): Promise<void> {
+  const sequence = ++localCliControlSequence;
   if (!isLocalCliProvider(provider)) {
+    codexModels = [];
     replaceModelOptions("Use CLI default", [], "");
     replaceReasoningOptions("", [], "");
-    modelSelect.disabled = false;
+    setLocalCliControlsDisabled(false);
     return;
   }
 
   if (provider === "local-claude-cli") {
+    codexModels = [];
     replaceModelOptions("Use claude CLI's own default", CLAUDE_MODEL_OPTIONS, settings.claudeCliModel);
-    modelSelect.disabled = false;
+    populateReasoningSelect(provider, settings);
+    setLocalCliControlsDisabled(false);
     return;
   }
 
+  codexModels = [];
   replaceModelOptions("Use codex CLI's own default", [], settings.codexCliModel, "Loading Codex models...");
-  modelSelect.disabled = true;
+  replaceReasoningOptions("", [], "");
+  setLocalCliControlsDisabled(true);
   setNativeBridgeStatus("Loading Codex models...", false);
   if (allowPermissionRequest) {
     try {
       await ensureProviderPermission(provider);
-      if (sequence !== modelLoadSequence) {
+      if (sequence !== localCliControlSequence) {
         return;
       }
     } catch {
-      if (sequence === modelLoadSequence) {
-        codexModels = [];
-        replaceModelOptions("Use codex CLI's own default", [], "");
-        setNativeBridgeStatus("Grant native messaging access to load Codex models.", false);
-        modelSelect.disabled = false;
+      if (sequence === localCliControlSequence) {
+        commitCodexControls([], settings, "Grant native messaging access to load Codex models.", false);
       }
       return;
     }
   } else if (!(await hasNativeMessagingPermission())) {
-    if (sequence !== modelLoadSequence) {
+    if (sequence !== localCliControlSequence) {
       return;
     }
-    codexModels = [];
-    replaceModelOptions("Use codex CLI's own default", [], "");
-    setNativeBridgeStatus("Select this provider again or Save to load Codex models.", false);
-    modelSelect.disabled = false;
+    commitCodexControls([], settings, "Select this provider again or Save to load Codex models.", false);
     return;
   }
 
   try {
     const models = await listNativeModels("codex");
-    if (sequence !== modelLoadSequence) {
+    if (sequence !== localCliControlSequence) {
       return;
     }
-    codexModels = models;
-    replaceModelOptions("Use codex CLI's own default", models, settings.codexCliModel);
-    setNativeBridgeStatus("", false);
+    commitCodexControls(models, settings, "", false);
   } catch (error) {
-    if (sequence !== modelLoadSequence) {
+    if (sequence !== localCliControlSequence) {
       return;
     }
-    codexModels = [];
-    replaceModelOptions("Use codex CLI's own default", [], "");
-    setNativeBridgeStatus(getFriendlyProviderErrorMessage(error), true);
-  } finally {
-    if (sequence === modelLoadSequence) {
-      modelSelect.disabled = false;
-    }
+    commitCodexControls([], settings, getFriendlyProviderErrorMessage(error), true);
   }
+}
+
+function commitCodexControls(models: NativeModelInfo[], settings: Settings, status: string, isError: boolean): void {
+  codexModels = models;
+  replaceModelOptions("Use codex CLI's own default", models, settings.codexCliModel);
+  populateReasoningSelect("local-codex-cli", settings);
+  setLocalCliControlsDisabled(false);
+  setNativeBridgeStatus(status, isError);
+}
+
+function setLocalCliControlsDisabled(disabled: boolean): void {
+  modelSelect.disabled = disabled;
+  reasoningSelect.disabled = disabled;
 }
 
 function replaceModelOptions(defaultLabel: string, models: NativeModelInfo[], selectedValue: string, loadingLabel = ""): void {
@@ -246,11 +272,12 @@ function populateReasoningSelect(provider: string, settings: Settings): void {
     return;
   }
 
-  const selectedModel = codexModels.find((model) => model.slug === modelSelect.value);
-  const fallbackModel = selectedModel || (modelSelect.value ? undefined : codexModels[0]);
-  const modelLevels = fallbackModel?.supportedReasoningLevels?.filter((level) => level.trim() !== "");
+  const selectedModel = modelSelect.value
+    ? codexModels.find((model) => model.slug === modelSelect.value)
+    : undefined;
+  const modelLevels = selectedModel?.supportedReasoningLevels?.filter((level) => level.trim() !== "");
   const levels = modelLevels && modelLevels.length > 0 ? modelLevels : CODEX_REASONING_LEVELS;
-  const defaultLevel = fallbackModel?.defaultReasoningLevel || "";
+  const defaultLevel = selectedModel?.defaultReasoningLevel || "";
   const defaultLabel = defaultLevel ? `Use codex CLI's default (${defaultLevel})` : "Use codex CLI's default";
   replaceReasoningOptions(defaultLabel, levels, settings.codexReasoningEffort);
 }

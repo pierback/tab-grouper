@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	ProtocolVersion       = 1
+	ProtocolVersion       = 2
 	RequestPlanType       = "TAB_GROUP_PLAN_REQUEST"
 	RequestStatusType     = "NATIVE_HOST_STATUS_REQUEST"
 	RequestListModelsType = "NATIVE_HOST_LIST_MODELS_REQUEST"

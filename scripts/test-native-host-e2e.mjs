@@ -32,13 +32,14 @@ try {
   );
 
   const statusResponse = await runNativeHost(binaryPath, {
-    version: 1,
+    version: 2,
     type: "NATIVE_HOST_STATUS_REQUEST",
     requestId: "native-e2e-status-1",
     provider: "codex"
   });
 
   assert.equal(statusResponse.ok, true, JSON.stringify(statusResponse));
+  assert.equal(statusResponse.version, 2);
   assert.equal(statusResponse.provider, "local-codex-cli");
   assert.deepEqual(statusResponse.status, {
     provider: "local-codex-cli",
@@ -50,7 +51,7 @@ try {
   });
 
   const response = await runNativeHost(binaryPath, {
-    version: 1,
+    version: 2,
     type: "TAB_GROUP_PLAN_REQUEST",
     requestId: "native-e2e-1",
     provider: "codex",
@@ -63,6 +64,7 @@ try {
   });
 
   assert.equal(response.ok, true, JSON.stringify(response));
+  assert.equal(response.version, 2);
   assert.equal(response.provider, "local-codex-cli");
   assert.deepEqual(response.plan.groups, [
     { name: "Pinned Codex", color: "blue", tabIds: [1, 2] }

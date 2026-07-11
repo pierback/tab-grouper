@@ -24,6 +24,9 @@ func TestNativeMessageRoundTrip(t *testing.T) {
 		t.Fatalf("missing size prefix")
 	}
 	payload := buffer.Bytes()
+	if !bytes.Contains(payload, []byte(`"version":2`)) {
+		t.Fatalf("payload did not include current protocol version: %s", string(payload))
+	}
 	if !bytes.Contains(payload, []byte(`"requestId":"req-1"`)) {
 		t.Fatalf("payload did not include response JSON: %s", string(payload))
 	}
@@ -47,6 +50,14 @@ func TestValidateRequestRejectsOversizedModel(t *testing.T) {
 	request.Model = strings.Repeat("x", 80)
 	if err := ValidateRequest(request); err != nil {
 		t.Fatalf("expected 80 character model to validate: %v", err)
+	}
+}
+
+func TestValidateRequestRejectsOldProtocolVersion(t *testing.T) {
+	request := validRequest()
+	request.Version = 1
+	if err := ValidateRequest(request); err == nil || err.Error() != "unsupported protocol version" {
+		t.Fatalf("expected old protocol version to fail, got %v", err)
 	}
 }
 

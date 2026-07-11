@@ -14,6 +14,7 @@ import type {
 type NativeCliSettings = Partial<Settings>;
 
 export const NATIVE_HOST_NAME = "com.fabianpieringer.tab_grouper";
+const NATIVE_PROTOCOL_VERSION = 2 as const;
 const REQUEST_TYPE = "TAB_GROUP_PLAN_REQUEST";
 const STATUS_REQUEST_TYPE = "NATIVE_HOST_STATUS_REQUEST";
 const LIST_MODELS_REQUEST_TYPE = "NATIVE_HOST_LIST_MODELS_REQUEST";
@@ -24,7 +25,7 @@ const LIST_MODELS_TIMEOUT_MS = 5000;
 const EXTENSION_TIMEOUT_MARGIN_MS = 2500;
 
 interface NativePlanRequest {
-  version: 1;
+  version: typeof NATIVE_PROTOCOL_VERSION;
   type: typeof REQUEST_TYPE;
   requestId: string;
   provider: LocalCliProvider;
@@ -46,20 +47,21 @@ interface NativePlanRequest {
 }
 
 interface NativeStatusRequest {
-  version: 1;
+  version: typeof NATIVE_PROTOCOL_VERSION;
   type: typeof STATUS_REQUEST_TYPE;
   requestId: string;
   provider: LocalCliProvider;
 }
 
 interface NativeListModelsRequest {
-  version: 1;
+  version: typeof NATIVE_PROTOCOL_VERSION;
   type: typeof LIST_MODELS_REQUEST_TYPE;
   requestId: string;
   provider: "codex";
 }
 
 interface NativeResponse {
+  version: number;
   type?: string;
   requestId?: string;
   ok?: boolean;
@@ -94,7 +96,7 @@ export async function createPlanWithNativeCli(
   const timeoutMs = getNativeRequestTimeoutMs(settings);
   const requestId = createRequestId();
   const request: NativePlanRequest = {
-    version: 1,
+    version: NATIVE_PROTOCOL_VERSION,
     type: REQUEST_TYPE,
     requestId,
     provider: cliProvider,
@@ -141,7 +143,7 @@ export async function checkNativeCliStatus(provider: Provider | LocalCliProvider
   const cliProvider = normalizeCliProvider(provider);
   await ensureNativeMessagingPermission();
   const request: NativeStatusRequest = {
-    version: 1,
+    version: NATIVE_PROTOCOL_VERSION,
     type: STATUS_REQUEST_TYPE,
     requestId: createRequestId(),
     provider: cliProvider
@@ -164,7 +166,7 @@ export async function listNativeModels(provider: Provider | LocalCliProvider): P
   }
   await ensureNativeMessagingPermission();
   const request: NativeListModelsRequest = {
-    version: 1,
+    version: NATIVE_PROTOCOL_VERSION,
     type: LIST_MODELS_REQUEST_TYPE,
     requestId: createRequestId(),
     provider: "codex"
@@ -186,6 +188,13 @@ function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest | Na
     port.onMessage.addListener((response) => {
       if (!response || response.requestId !== request.requestId || response.type !== RESPONSE_TYPE) {
         resume(Effect.fail(providerError("native-host-protocol-error", "Local CLI bridge returned an unexpected response.")));
+        return;
+      }
+      if (response.version !== request.version) {
+        const message = response.version === 1
+          ? "Native bridge is outdated. Reinstall it with nub run native:install."
+          : "Native bridge protocol does not match this extension. Rebuild the extension and reinstall the native host from the same checkout.";
+        resume(Effect.fail(providerError("native-host-protocol-error", message)));
         return;
       }
       if (!response.ok) {

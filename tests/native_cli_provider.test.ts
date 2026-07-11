@@ -3,6 +3,7 @@ import { checkNativeCliStatus, createPlanWithNativeCli, listNativeModels, NATIVE
 import type { ProviderError } from "../src/lib/types.js";
 
 interface NativeRequest {
+  version: number;
   requestId: string;
   type: string;
   provider?: string;
@@ -31,6 +32,10 @@ interface NativeResponse {
     supportedReasoningLevels?: string[];
     defaultReasoningLevel?: string;
   }>;
+  error?: {
+    kind?: string;
+    message?: string;
+  };
 }
 
 interface CreateChromeConfig {
@@ -135,7 +140,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 1,
+        version: 2,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -161,6 +166,7 @@ const tabs = [
     assert.deepEqual(plan.groups, [{ name: "Codex GitHub", color: "blue", tabIds: [1, 2] }]);
     assert.deepEqual(plan.timing, { durationMs: 321, inputTokens: 10, outputTokens: 5, costUsd: 0.0123 });
     assert.deepEqual(chrome.__state.hostNames, [NATIVE_HOST_NAME]);
+    assert.equal(chrome.__state.sentMessages[0]!.version, 2);
     assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
     assert.equal(Object.hasOwn(chrome.__state.sentMessages[0]!, "model"), false);
     assert.equal(Object.hasOwn(chrome.__state.sentMessages[0]!, "reasoningEffort"), false);
@@ -178,7 +184,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 1,
+        version: 2,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -205,7 +211,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 1,
+        version: 2,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -234,7 +240,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 1,
+        version: 2,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -263,7 +269,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 1,
+        version: 2,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -297,7 +303,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 1,
+        version: 2,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -319,6 +325,7 @@ const tabs = [
   assert.equal(status.configured, true);
   assert.equal(status.executableAvailable, true);
   assert.equal(chrome.__state.sentMessages[0]!.type, "NATIVE_HOST_STATUS_REQUEST");
+  assert.equal(chrome.__state.sentMessages[0]!.version, 2);
   assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
 }
 
@@ -326,7 +333,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 1,
+        version: 2,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -346,7 +353,37 @@ const tabs = [
     { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini", supportedReasoningLevels: ["low", "medium", "high", "xhigh"], defaultReasoningLevel: "medium" }
   ]);
   assert.equal(chrome.__state.sentMessages[0]!.type, "NATIVE_HOST_LIST_MODELS_REQUEST");
+  assert.equal(chrome.__state.sentMessages[0]!.version, 2);
   assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
+}
+
+{
+  const chrome = createChrome({
+    nativeResponse(message) {
+      return {
+        version: 1,
+        type: "TAB_GROUP_PLAN_RESPONSE",
+        requestId: message.requestId,
+        ok: false,
+        provider: "local-codex-cli",
+        error: {
+          kind: "native-host-protocol-error",
+          message: "unsupported protocol version"
+        }
+      };
+    }
+  });
+  globalThis.chrome = chrome as unknown as typeof globalThis.chrome;
+
+  await assert.rejects(
+    checkNativeCliStatus("local-codex-cli"),
+    (error) => {
+      const mismatch = providerError(error);
+      assert.equal(mismatch.providerErrorKind, "native-host-protocol-error");
+      assert.equal(mismatch.message, "Native bridge is outdated. Reinstall it with nub run native:install.");
+      return true;
+    }
+  );
 }
 
 {
