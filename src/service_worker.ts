@@ -42,7 +42,7 @@ interface CachedPlan {
 
 type StoredSnapshotsByWindow = Record<string, TidySnapshot>;
 
-const activeTidiesByWindow = new Set<number>();
+const activeMutationsByWindow = new Set<number>();
 const planCache = new Map<number, PlanCacheEntry<CachedPlan>>();
 const hintCache = new Map<number, import("./lib/hint_cache.js").HintCacheEntry>();
 let snapshotMutationQueue: Promise<unknown> = Promise.resolve();
@@ -55,7 +55,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse(createInvalidWindowResponse());
       return false;
     }
-    withWindowTidyLock(windowId, () => tidyCurrentWindow(windowId, grantedHintOrigins))
+    withWindowMutationLock(windowId, () => tidyCurrentWindow(windowId, grantedHintOrigins))
       .then(sendResponse)
       .catch((error) => sendResponse(createErrorResponse(error)));
     return true;
@@ -80,7 +80,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse(createInvalidWindowResponse());
       return false;
     }
-    undoLastTidy(windowId)
+    withWindowMutationLock(windowId, () => undoLastTidy(windowId))
       .then(sendResponse)
       .catch((error) => sendResponse(createErrorResponse(error)));
     return true;
@@ -99,6 +99,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   return false;
+});
+
+chrome.tabs.onRemoved?.addListener((tabId) => {
+  hintCache.delete(tabId);
+});
+
+chrome.windows?.onRemoved?.addListener((windowId) => {
+  invalidatePlanCache(planCache, windowId);
 });
 
 function readMessageWindowId(message: any): number | null {
@@ -259,19 +267,19 @@ async function tidyCurrentWindow(windowId: number, grantedHintOrigins: string[] 
   };
 }
 
-async function withWindowTidyLock<T>(windowId: number, callback: () => Promise<T>): Promise<T | { ok: false; error: string }> {
-  if (activeTidiesByWindow.has(windowId)) {
+async function withWindowMutationLock<T>(windowId: number, callback: () => Promise<T>): Promise<T | { ok: false; error: string }> {
+  if (activeMutationsByWindow.has(windowId)) {
     return {
       ok: false,
-      error: "A tidy operation is already running for this window."
+      error: "Another tab operation is already running for this window."
     };
   }
 
-  activeTidiesByWindow.add(windowId);
+  activeMutationsByWindow.add(windowId);
   try {
     return await callback();
   } finally {
-    activeTidiesByWindow.delete(windowId);
+    activeMutationsByWindow.delete(windowId);
   }
 }
 
@@ -409,6 +417,7 @@ async function collectPageHints(tabs: chrome.tabs.Tab[], settings: Settings): Pr
   }
 
   let nextTabIndex = 0;
+  const permissionByOrigin = new Map<string, Promise<boolean>>();
   const workerCount = Math.min(8, tabs.length);
 
   async function collectNextHint() {
@@ -432,10 +441,15 @@ async function collectPageHints(tabs: chrome.tabs.Tab[], settings: Settings): Pr
       if (!origin) {
         continue;
       }
-      const hasPermission = await chrome.permissions.contains({
-        permissions: ["scripting"],
-        origins: [origin]
-      }).catch(() => false);
+      let permission = permissionByOrigin.get(origin);
+      if (!permission) {
+        permission = chrome.permissions.contains({
+          permissions: ["scripting"],
+          origins: [origin]
+        }).catch(() => false);
+        permissionByOrigin.set(origin, permission);
+      }
+      const hasPermission = await permission;
       if (!hasPermission) {
         continue;
       }
@@ -685,9 +699,14 @@ function getSnapshotFromMap(snapshotsByWindow: StoredSnapshotsByWindow, windowId
     return isUsableSnapshot(snapshot) ? snapshot : null;
   }
 
-  return Object.values(snapshotsByWindow)
-    .filter((snapshot) => isUsableSnapshot(snapshot))
-    .sort((left, right) => right.createdAt - left.createdAt)[0] || null;
+  let newestSnapshot: TidySnapshot | null = null;
+  for (const snapshot of Object.values(snapshotsByWindow)) {
+    if (isUsableSnapshot(snapshot) && (!newestSnapshot || snapshot.createdAt > newestSnapshot.createdAt)) {
+      newestSnapshot = snapshot;
+    }
+  }
+
+  return newestSnapshot;
 }
 
 function countSkipReasons(tabs: chrome.tabs.Tab[], settings: Settings): SkippedCounts {

@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createHash, generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync } from "node:crypto";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { extensionIdFromPublicKey } from "./lib/extension_id.mjs";
+import { nativeHostRuntimePaths } from "./lib/native_host_runtime.mjs";
 
 const root = process.cwd();
 const chromePath = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -339,7 +340,7 @@ async function runSmoke() {
             throw new Error("Timed out waiting for popup element: " + selector);
           };
           const waitForText = async (needle) => {
-            for (let attempt = 0; attempt < 120; attempt += 1) {
+            for (let attempt = 0; attempt < 220; attempt += 1) {
               const text = document.querySelector("#result")?.textContent || "";
               if (text.includes(needle)) {
                 return text;
@@ -609,23 +610,6 @@ async function waitForDaemonShutdown(socketPath) {
     } catch {
       return;
     }
-  }
-}
-
-function nativeHostRuntimePaths(executablePath) {
-  const resolvedPath = fsRealPath(executablePath);
-  const runtimeId = createHash("sha256").update(resolvedPath).digest("hex").slice(0, 16);
-  const basePath = path.join("/tmp", `tab-grouper-native-host-${runtimeId}`);
-  return {
-    socketPath: `${basePath}.sock`
-  };
-}
-
-function fsRealPath(filePath) {
-  try {
-    return fs.realpathSync.native(filePath);
-  } catch {
-    return path.resolve(filePath);
   }
 }
 

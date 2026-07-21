@@ -1,4 +1,4 @@
-import type { Provider, ProviderError, ProviderErrorKind, Settings } from "./types.js";
+import type { LocalCliProvider, Provider, ProviderError, ProviderErrorKind, Settings } from "./types.js";
 
 interface ProviderMetadata {
   label: string;
@@ -55,6 +55,20 @@ export const PROVIDER_METADATA = {
 
 export function getProviderLabel(provider: Provider | string | undefined): string {
   return isProvider(provider) ? PROVIDER_METADATA[provider].label : provider || "Unknown";
+}
+
+type LocalCliProviderSetting = `local-${LocalCliProvider}-cli`;
+
+export function isLocalCliProvider(provider: Provider | string | undefined): provider is LocalCliProviderSetting {
+  return provider === "local-codex-cli" || provider === "local-claude-cli";
+}
+
+export function getLocalCliLabel(provider: Provider | string | undefined): string {
+  if (!isLocalCliProvider(provider)) {
+    return "Local CLI";
+  }
+
+  return provider === "local-codex-cli" ? "Codex CLI" : "Claude Code CLI";
 }
 
 const FRIENDLY_ERROR_MESSAGES_BY_KIND: Partial<Record<ProviderErrorKind, string>> = {

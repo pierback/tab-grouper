@@ -1,10 +1,10 @@
 import { spawn, spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { nativeHostRuntimePaths } from "./lib/native_host_runtime.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nativeHostDir = path.join(root, "native-host");
@@ -127,23 +127,6 @@ function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
-}
-
-function nativeHostRuntimePaths(executablePath) {
-  const resolvedPath = fsRealPath(executablePath);
-  const runtimeId = createHash("sha256").update(resolvedPath).digest("hex").slice(0, 16);
-  const basePath = path.join("/tmp", `tab-grouper-native-host-${runtimeId}`);
-  return {
-    socketPath: `${basePath}.sock`
-  };
-}
-
-function fsRealPath(filePath) {
-  try {
-    return fs.realpathSync.native(filePath);
-  } catch {
-    return path.resolve(filePath);
-  }
 }
 
 function encodeNativeMessage(message) {

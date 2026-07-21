@@ -34,7 +34,7 @@ const readyPlan = {
   }
 };
 
-assert.equal(buildSkippedText({ pinned: 0, alreadyGrouped: 0, missingUrl: 2 }), "");
+assert.equal(buildSkippedText({ pinned: 0, alreadyGrouped: 0, missingUrl: 2 }), "Skipped 2 without a URL.");
 assert.equal(buildSkippedText(readyPlan.skipped), "Skipped 2 already grouped, 1 pinned.");
 assert.equal(buildPlanMessage(readyPlan, { preview: true }), "Would create 2 groups. Skipped 2 already grouped, 1 pinned.");
 assert.equal(

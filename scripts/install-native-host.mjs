@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -7,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extensionIdFromManifestKey } from "./lib/extension_id.mjs";
 import { resolveBrowserManifestTargets } from "./lib/native_host_browsers.mjs";
+import { nativeHostRuntimePaths } from "./lib/native_host_runtime.mjs";
 
 const NATIVE_HOST_NAME = "com.fabianpieringer.tab_grouper";
 
@@ -184,27 +184,6 @@ function restartNativeHostDaemon(executablePath) {
     console.warn(`Warning: failed to remove stale native host daemon socket ${paths.socketPath}: ${error.message}`);
   }
   return { failed: false, restarted: result.status === 0 };
-}
-
-function nativeHostRuntimePaths(executablePath) {
-  const runtimeId = nativeHostRuntimeID(executablePath);
-  const basePath = path.join("/tmp", `tab-grouper-native-host-${runtimeId}`);
-  return {
-    socketPath: `${basePath}.sock`,
-    lockPath: `${basePath}.lock`,
-    logPath: `${basePath}-daemon.log`
-  };
-}
-
-function nativeHostRuntimeID(executablePath) {
-  const absolutePath = path.resolve(executablePath);
-  let resolvedPath = absolutePath;
-  try {
-    resolvedPath = fs.realpathSync(absolutePath);
-  } catch {
-    resolvedPath = absolutePath;
-  }
-  return createHash("sha256").update(resolvedPath).digest("hex").slice(0, 16);
 }
 
 function escapeRegex(value) {

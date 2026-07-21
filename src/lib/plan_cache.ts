@@ -1,7 +1,7 @@
 export const PLAN_CACHE_TTL_MS = 60000;
 
 export interface PlanCacheEntry<TValue = unknown> {
-  key: unknown;
+  key: string;
   value: TValue;
   capturedAt: number;
 }
@@ -22,7 +22,7 @@ export function getCachedPlan<TValue>(
     return null;
   }
 
-  if (JSON.stringify(entry.key) !== JSON.stringify(keyInput)) {
+  if (entry.key !== JSON.stringify(keyInput)) {
     return null;
   }
 
@@ -37,7 +37,7 @@ export function setCachedPlan<TValue>(
   now = Date.now
 ): void {
   cache.set(windowId, {
-    key: keyInput,
+    key: JSON.stringify(keyInput),
     value,
     capturedAt: now()
   });

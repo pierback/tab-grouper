@@ -17,10 +17,15 @@ try {
   assert.deepEqual(getCachedHint(cache, tab), hint);
 
   assert.equal(getCachedHint(cache, { ...tab, url: "https://example.com/other" }), undefined);
+  assert.equal(cache.has(tab.id), false);
+  setCachedHint(cache, tab, hint);
   assert.equal(getCachedHint(cache, { ...tab, title: "Other" }), undefined);
+  assert.equal(cache.has(tab.id), false);
 
+  setCachedHint(cache, tab, hint);
   now += 300000;
   assert.equal(getCachedHint(cache, tab), undefined);
+  assert.equal(cache.has(tab.id), false);
 } finally {
   Date.now = originalDateNow;
 }

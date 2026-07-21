@@ -1,6 +1,7 @@
 import { TAB_GROUP_PLAN_SCHEMA } from "./schema.js";
 import { groupTabsHeuristically } from "./heuristics.js";
 import { getProviderLabel, getProviderOrigins } from "./provider_metadata.js";
+import { createProviderError, omitUndefined } from "./provider_result.js";
 import { createPlanWithNativeCli } from "./native_cli_provider.js";
 import type {
   ExistingGroup,
@@ -152,10 +153,10 @@ async function createPlanWithChromeAI(tabs: PromptTabRecord[], settings: Provide
 
 async function createPlanWithOpenAI(tabs: PromptTabRecord[], settings: ProviderSettings, existingGroups: ExistingGroup[]): Promise<RawTabGroupPlan> {
   if (!settings.openaiApiKey) {
-    throw providerConfigurationError("missing-api-key", "Add an OpenAI API key in the extension options.");
+    throw createProviderError("missing-api-key", "Add an OpenAI API key in the extension options.");
   }
   if (!settings.openaiModel) {
-    throw providerConfigurationError("missing-model", "Choose an OpenAI model in the extension options.");
+    throw createProviderError("missing-model", "Choose an OpenAI model in the extension options.");
   }
   await ensureProviderHostPermission("openai");
 
@@ -217,10 +218,10 @@ async function createPlanWithOpenAI(tabs: PromptTabRecord[], settings: ProviderS
 
 async function createPlanWithAnthropic(tabs: PromptTabRecord[], settings: ProviderSettings, existingGroups: ExistingGroup[]): Promise<RawTabGroupPlan> {
   if (!settings.anthropicApiKey) {
-    throw providerConfigurationError("missing-api-key", "Add an Anthropic API key in the extension options.");
+    throw createProviderError("missing-api-key", "Add an Anthropic API key in the extension options.");
   }
   if (!settings.anthropicModel) {
-    throw providerConfigurationError("missing-model", "Choose an Anthropic model in the extension options.");
+    throw createProviderError("missing-model", "Choose an Anthropic model in the extension options.");
   }
   await ensureProviderHostPermission("anthropic");
 
@@ -281,12 +282,6 @@ function readChromeAIUsage(session: LanguageModel) {
     inputTokens: usage?.inputTokens ?? usage?.input_tokens,
     outputTokens: usage?.outputTokens ?? usage?.output_tokens
   });
-}
-
-function omitUndefined<T extends Record<string, unknown>>(values: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(values).filter(([, value]) => value !== undefined)
-  ) as Partial<T>;
 }
 
 function buildUserPrompt(tabs: PromptTabRecord[], existingGroups: ExistingGroup[] = []): string {
@@ -389,8 +384,8 @@ function getProviderRequestTimeoutMs(settings: Partial<Settings>): number {
   return Math.max(100, Math.min(30000, Math.trunc(rawTimeoutMs)));
 }
 
-function providerTimeoutError(providerLabel: string, timeoutMs: number): ProviderError {
-  return providerConfigurationError(
+function providerTimeoutError(providerLabel: string, timeoutMs: number) {
+  return createProviderError(
     "provider-timeout",
     `${providerLabel} request timed out after ${Math.ceil(timeoutMs / 1000)} seconds.`
   );
@@ -407,7 +402,7 @@ async function ensureProviderHostPermission(provider: Provider): Promise<void> {
   }
 
   if (!globalThis.chrome?.permissions?.contains) {
-    throw providerConfigurationError(
+    throw createProviderError(
       "missing-host-permission",
       `${getProviderLabel(provider)} host permission is unavailable. Re-save the provider in options.`
     );
@@ -415,21 +410,11 @@ async function ensureProviderHostPermission(provider: Provider): Promise<void> {
 
   const isGranted = await chrome.permissions.contains({ origins });
   if (!isGranted) {
-    throw providerConfigurationError(
+    throw createProviderError(
       "missing-host-permission",
       `${getProviderLabel(provider)} host permission is missing. Re-save the provider in options.`
     );
   }
-}
-
-function providerConfigurationError(kind: ProviderErrorKind, message: string): ProviderError {
-  return createProviderError(kind, message);
-}
-
-function createProviderError(kind: ProviderErrorKind, message: string): ProviderError {
-  const error: ProviderError = new Error(message);
-  error.providerErrorKind = kind;
-  return error;
 }
 
 function normalizeProviderError(error: unknown): { kind: ProviderErrorKind; message: string } {

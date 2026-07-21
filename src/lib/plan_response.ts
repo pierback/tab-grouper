@@ -13,7 +13,6 @@ import type {
 interface PlanResponseExtras {
   preview?: boolean;
   undoAvailable?: boolean;
-  [key: string]: unknown;
 }
 
 type PlanResponseProviderResult = Pick<ProviderResult, "usedFallback"> & Partial<{
@@ -70,9 +69,9 @@ export function createPlanResponse(planResult: PlanResponseInput, extras: PlanRe
     inputTokens: planResult.providerResult.inputTokens,
     outputTokens: planResult.providerResult.outputTokens,
     costUsd: planResult.providerResult.costUsd,
-    undoAvailable: false,
+    undoAvailable: extras.undoAvailable ?? false,
     message: buildPlanMessage(planResult, extras),
-    ...extras
+    ...(extras.preview === undefined ? {} : { preview: extras.preview })
   };
 }
 
@@ -165,49 +164,10 @@ export function buildFallbackText(providerResult: PlanResponseProviderResult): s
   const actualProviderLabel = getProviderLabel(providerResult.provider || "heuristic");
   const providerError = providerResult.providerError ? ` Provider error: ${providerResult.providerError}` : "";
   const prefix = `Used ${actualProviderLabel} instead of ${requestedProviderLabel}.`;
-  if (providerResult.providerErrorKind === "missing-host-permission") {
-    return `${prefix} API host permission is missing.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "missing-api-key") {
-    return `${prefix} API key is missing.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "missing-model") {
-    return `${prefix} Provider model is missing.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "provider-timeout") {
-    return `${prefix} Provider timed out.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "missing-native-permission") {
-    return `${prefix} Native messaging permission is missing.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "native-host-not-found") {
-    return `${prefix} Local CLI bridge is not installed.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "native-host-forbidden") {
-    return `${prefix} Local CLI bridge is not allowed.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "native-host-protocol-error") {
-    return `${prefix} Local CLI bridge failed.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "native-host-config-error") {
-    return `${prefix} Local CLI bridge is not configured correctly.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "cli-timeout") {
-    return `${prefix} Local CLI timed out.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "cli-not-found") {
-    return `${prefix} Selected CLI is not installed.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "cli-auth-missing") {
-    return `${prefix} Selected CLI is not signed in.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "cli-error") {
-    return `${prefix} Selected CLI failed.${providerError}`;
-  }
-  if (providerResult.providerErrorKind === "malformed-output") {
-    return `${prefix} Local CLI returned invalid JSON.${providerError}`;
-  }
-  return `${prefix}${providerError}`;
+  const kind = providerResult.providerErrorKind as ProviderErrorKind | undefined;
+  const detail = kind ? FALLBACK_DETAILS[kind] : undefined;
+
+  return `${prefix}${detail ? ` ${detail}` : ""}${providerError}`;
 }
 
 export function buildSkippedText(skipped: SkippedCounts): string {
@@ -218,8 +178,28 @@ export function buildSkippedText(skipped: SkippedCounts): string {
   if (skipped.pinned > 0) {
     parts.push(`${skipped.pinned} pinned`);
   }
+  if (skipped.missingUrl > 0) {
+    parts.push(`${skipped.missingUrl} without a URL`);
+  }
   if (parts.length === 0) {
     return "";
   }
   return `Skipped ${parts.join(", ")}.`;
 }
+
+const FALLBACK_DETAILS: Partial<Record<ProviderErrorKind, string>> = {
+  "missing-host-permission": "API host permission is missing.",
+  "missing-api-key": "API key is missing.",
+  "missing-model": "Provider model is missing.",
+  "provider-timeout": "Provider timed out.",
+  "missing-native-permission": "Native messaging permission is missing.",
+  "native-host-not-found": "Local CLI bridge is not installed.",
+  "native-host-forbidden": "Local CLI bridge is not allowed.",
+  "native-host-protocol-error": "Local CLI bridge failed.",
+  "native-host-config-error": "Local CLI bridge is not configured correctly.",
+  "cli-timeout": "Local CLI timed out.",
+  "cli-not-found": "Selected CLI is not installed.",
+  "cli-auth-missing": "Selected CLI is not signed in.",
+  "cli-error": "Selected CLI failed.",
+  "malformed-output": "Local CLI returned invalid JSON."
+};

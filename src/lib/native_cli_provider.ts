@@ -1,4 +1,5 @@
 import { Cause, Effect, Exit, Option } from "effect";
+import { createProviderError, omitUndefined } from "./provider_result.js";
 import type {
   ExistingGroup,
   LocalCliProvider,
@@ -162,7 +163,7 @@ export async function checkNativeCliStatus(provider: Provider | LocalCliProvider
 export async function listNativeModels(provider: Provider | LocalCliProvider): Promise<NativeModelInfo[]> {
   const cliProvider = normalizeCliProvider(provider);
   if (cliProvider !== "codex") {
-    throw providerError("native-host-protocol-error", "Only the Codex CLI supports model listing.");
+    throw createProviderError("native-host-protocol-error", "Only the Codex CLI supports model listing.");
   }
   await ensureNativeMessagingPermission();
   const request: NativeListModelsRequest = {
@@ -187,18 +188,18 @@ function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest | Na
 
     port.onMessage.addListener((response) => {
       if (!response || response.requestId !== request.requestId || response.type !== RESPONSE_TYPE) {
-        resume(Effect.fail(providerError("native-host-protocol-error", "Local CLI bridge returned an unexpected response.")));
+        resume(Effect.fail(createProviderError("native-host-protocol-error", "Local CLI bridge returned an unexpected response.")));
         return;
       }
       if (response.version !== request.version) {
         const message = response.version === 1
           ? "Native bridge is outdated. Reinstall it with nub run native:install."
           : "Native bridge protocol does not match this extension. Rebuild the extension and reinstall the native host from the same checkout.";
-        resume(Effect.fail(providerError("native-host-protocol-error", message)));
+        resume(Effect.fail(createProviderError("native-host-protocol-error", message)));
         return;
       }
       if (!response.ok) {
-        resume(Effect.fail(providerError(response.error?.kind || "native-host-protocol-error", response.error?.message || "Local CLI bridge failed.")));
+        resume(Effect.fail(createProviderError(response.error?.kind || "native-host-protocol-error", response.error?.message || "Local CLI bridge failed.")));
         return;
       }
       resume(Effect.succeed(response));
@@ -231,7 +232,7 @@ function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest | Na
   const withTimeout = portEffect.pipe(
     Effect.timeout(timeoutMs + EXTENSION_TIMEOUT_MARGIN_MS),
     Effect.mapError((error) =>
-      Cause.isTimeoutError(error) ? providerError("provider-timeout", "Local CLI provider timed out.") : error
+      Cause.isTimeoutError(error) ? createProviderError("provider-timeout", "Local CLI provider timed out.") : error
     )
   );
 
@@ -254,29 +255,29 @@ function normalizeCliProvider(provider: Provider | LocalCliProvider): LocalCliPr
   if (provider === "local-claude-cli" || provider === "claude") {
     return "claude";
   }
-  throw providerError("native-host-protocol-error", `Unsupported local CLI provider: ${provider}`);
+  throw createProviderError("native-host-protocol-error", `Unsupported local CLI provider: ${provider}`);
 }
 
 async function ensureNativeMessagingPermission() {
   if (!globalThis.chrome?.permissions?.contains) {
-    throw providerError("missing-native-permission", "Native messaging permission is unavailable. Re-save the provider in options.");
+    throw createProviderError("missing-native-permission", "Native messaging permission is unavailable. Re-save the provider in options.");
   }
 
   const hasPermission = await chrome.permissions.contains({ permissions: ["nativeMessaging"] });
   if (!hasPermission) {
-    throw providerError("missing-native-permission", "Native messaging permission is missing. Re-save the provider in options.");
+    throw createProviderError("missing-native-permission", "Native messaging permission is missing. Re-save the provider in options.");
   }
 }
 
-function classifyNativeError(error: unknown): ProviderError {
+function classifyNativeError(error: unknown) {
   const message = readErrorMessage(error, "Local CLI bridge disconnected.");
   if (/host.*not found|specified native messaging host not found/i.test(message)) {
-    return providerError("native-host-not-found", "Tab Grouper native bridge is not installed.");
+    return createProviderError("native-host-not-found", "Tab Grouper native bridge is not installed.");
   }
   if (/forbidden|not allowed|access/i.test(message)) {
-    return providerError("native-host-forbidden", "Tab Grouper native bridge is not allowed for this extension.");
+    return createProviderError("native-host-forbidden", "Tab Grouper native bridge is not allowed for this extension.");
   }
-  return providerError("native-host-protocol-error", message);
+  return createProviderError("native-host-protocol-error", message);
 }
 
 function readErrorMessage(error: unknown, fallback: string): string {
@@ -284,12 +285,6 @@ function readErrorMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return String(error || fallback);
-}
-
-function providerError(kind: ProviderErrorKind, message: string): ProviderError {
-  const error: ProviderError = new Error(message);
-  error.providerErrorKind = kind;
-  return error;
 }
 
 function getNativeRequestTimeoutMs(settings: NativeCliSettings): number {
@@ -305,10 +300,4 @@ function createRequestId() {
     return globalThis.crypto.randomUUID();
   }
   return `native-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function omitUndefined<T extends Record<string, unknown>>(values: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(values).filter(([, value]) => value !== undefined)
-  ) as Partial<T>;
 }

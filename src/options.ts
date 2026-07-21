@@ -4,9 +4,11 @@ import {
   getAllProviderOrigins,
   getAllProviderPermissions,
   getFriendlyProviderErrorMessage,
+  getLocalCliLabel,
   getProviderDataScope,
   getProviderOrigins,
-  getProviderPermissions
+  getProviderPermissions,
+  isLocalCliProvider
 } from "./lib/provider_metadata.js";
 import type { NativeModelInfo, PartialSettings, Provider, Settings } from "./lib/types.js";
 
@@ -134,14 +136,6 @@ function updateProviderSections(provider: string): void {
   setNativeBridgeStatus("", false);
 }
 
-function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
-  const number = Number(value);
-  if (!Number.isFinite(number)) {
-    return fallback;
-  }
-  return Math.max(min, Math.min(max, number));
-}
-
 function updateDataScope(settings = readCurrentScopeSettings()): void {
   const scope = getProviderDataScope(settings);
   dataMode.textContent = scope.dataMode;
@@ -171,7 +165,7 @@ function readFormSettings(): PartialSettings {
     ignorePinnedTabs: formData.get("ignorePinnedTabs") === "on",
     keepExistingGroups: formData.get("keepExistingGroups") === "on",
     collapseGroups: formData.get("collapseGroups") === "on",
-    minimumGroupSize: clampNumber(formData.get("minimumGroupSize"), 2, 10, 2)
+    minimumGroupSize: Number(formData.get("minimumGroupSize"))
   };
 }
 
@@ -247,14 +241,14 @@ function setLocalCliControlsDisabled(disabled: boolean): void {
 
 function replaceModelOptions(defaultLabel: string, models: NativeModelInfo[], selectedValue: string, loadingLabel = ""): void {
   modelSelect.replaceChildren();
-  modelSelect.appendChild(createModelOption("", defaultLabel));
+  modelSelect.appendChild(createOption("", defaultLabel));
   if (loadingLabel) {
-    const loadingOption = createModelOption("", loadingLabel);
+    const loadingOption = createOption("", loadingLabel);
     loadingOption.disabled = true;
     modelSelect.appendChild(loadingOption);
   }
   for (const model of models) {
-    modelSelect.appendChild(createModelOption(model.slug, model.displayName || model.slug));
+    modelSelect.appendChild(createOption(model.slug, model.displayName || model.slug));
   }
 
   const allowedValues = new Set(models.map((model) => model.slug));
@@ -288,23 +282,16 @@ function replaceReasoningOptions(defaultLabel: string, levels: string[], selecte
     reasoningSelect.value = "";
     return;
   }
-  reasoningSelect.appendChild(createReasoningOption("", defaultLabel));
+  reasoningSelect.appendChild(createOption("", defaultLabel));
   for (const level of levels) {
-    reasoningSelect.appendChild(createReasoningOption(level, level));
+    reasoningSelect.appendChild(createOption(level, level));
   }
 
   const allowedValues = new Set(levels);
   reasoningSelect.value = selectedValue && allowedValues.has(selectedValue) ? selectedValue : "";
 }
 
-function createModelOption(value: string, label: string): HTMLOptionElement {
-  const option = document.createElement("option");
-  option.value = value;
-  option.textContent = label;
-  return option;
-}
-
-function createReasoningOption(value: string, label: string): HTMLOptionElement {
+function createOption(value: string, label: string): HTMLOptionElement {
   const option = document.createElement("option");
   option.value = value;
   option.textContent = label;
@@ -362,47 +349,33 @@ async function testNativeBridge() {
   setNativeBridgeStatus("Checking...", false);
   try {
     await ensureProviderPermission(provider);
-    const status = await checkNativeCliStatus(provider as Provider);
+    const status = await checkNativeCliStatus(provider);
     if (status.configured && status.executableAvailable && status.authenticated) {
-      setNativeBridgeStatus(`${localCliLabel(provider)} bridge is ready.`, false);
+      setNativeBridgeStatus(`${getLocalCliLabel(provider)} bridge is ready.`, false);
       return;
     }
     if (!status.configured) {
-      setNativeBridgeStatus(`${localCliLabel(provider)} path is not configured. Reinstall the native host.`, true);
+      setNativeBridgeStatus(`${getLocalCliLabel(provider)} path is not configured. Reinstall the native host.`, true);
       return;
     }
     if (!status.executableAvailable) {
-      setNativeBridgeStatus(`${localCliLabel(provider)} path is configured but not executable. Reinstall the native host.`, true);
+      setNativeBridgeStatus(`${getLocalCliLabel(provider)} path is configured but not executable. Reinstall the native host.`, true);
       return;
     }
     if (status.authChecked && !status.authenticated) {
-      setNativeBridgeStatus(`${localCliLabel(provider)} is installed but not signed in.`, true);
+      setNativeBridgeStatus(`${getLocalCliLabel(provider)} is installed but not signed in.`, true);
       return;
     }
     if (!status.authChecked) {
-      setNativeBridgeStatus(`${localCliLabel(provider)} path is ready, but sign-in could not be verified.`, true);
+      setNativeBridgeStatus(`${getLocalCliLabel(provider)} path is ready, but sign-in could not be verified.`, true);
       return;
     }
-    setNativeBridgeStatus(`${localCliLabel(provider)} bridge is not ready.`, true);
+    setNativeBridgeStatus(`${getLocalCliLabel(provider)} bridge is not ready.`, true);
   } catch (error) {
     setNativeBridgeStatus(getFriendlyProviderErrorMessage(error), true);
   } finally {
     testNativeBridgeButton.disabled = false;
   }
-}
-
-function localCliLabel(provider: string): string {
-  if (provider === "local-codex-cli") {
-    return "Codex CLI";
-  }
-  if (provider === "local-claude-cli") {
-    return "Claude Code CLI";
-  }
-  return "Local CLI";
-}
-
-function isLocalCliProvider(provider: string): boolean {
-  return provider === "local-codex-cli" || provider === "local-claude-cli";
 }
 
 async function removeUnusedProviderPermissions(provider: string): Promise<void> {

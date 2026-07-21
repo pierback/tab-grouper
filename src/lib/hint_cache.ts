@@ -25,9 +25,11 @@ export function getCachedHint(cache: Map<number, HintCacheEntry> | undefined, ta
     return undefined;
   }
   if (entry.url !== tab.url || entry.title !== tab.title) {
+    cache?.delete(tabId);
     return undefined;
   }
   if (Date.now() - entry.capturedAt >= HINT_CACHE_TTL_MS) {
+    cache?.delete(tabId);
     return undefined;
   }
   return {
