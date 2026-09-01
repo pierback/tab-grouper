@@ -108,3 +108,7 @@ nub run smoke:chrome
 ```
 
 The smoke test opens a temporary Chrome profile, loads a temporary unpacked copy of this extension through Chrome DevTools Protocol, verifies heuristic tidy/undo, installs a temporary Native Messaging host with a fake pinned Codex executable, verifies local Codex provider tidy/undo with superficial page hints, then restores the Chrome native-host manifest. Set `CHROME_PATH` if Chrome is installed somewhere other than `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`.
+
+## License
+
+Released under the [MIT License](LICENSE).
