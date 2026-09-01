@@ -74,6 +74,10 @@ assert.equal(
   "Native bridge is not installed. Run nub run native:install."
 );
 assert.equal(
+  getFriendlyProviderErrorMessage({ providerErrorKind: "cli-timeout", message: "/opt/homebrew/bin/codex timed out" }),
+  "The local CLI did not finish before the model timeout. Increase Model timeout in Options or choose a faster model or reasoning level."
+);
+assert.equal(
   getFriendlyProviderErrorMessage({ providerErrorKind: "unknown-kind", message: "raw detail" }),
   "raw detail"
 );

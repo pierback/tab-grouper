@@ -3,6 +3,8 @@ import { groupTabsHeuristically } from "./heuristics.js";
 import { getProviderLabel, getProviderOrigins } from "./provider_metadata.js";
 import { createProviderError, omitUndefined } from "./provider_result.js";
 import { createPlanWithNativeCli } from "./native_cli_provider.js";
+import { estimateProviderUsageCost } from "./cost_estimate.js";
+import { getProviderRequestTimeoutMs } from "./provider_timeout.js";
 import type {
   ExistingGroup,
   LocalTabRecord,
@@ -28,8 +30,6 @@ const SYSTEM_PROMPT = [
   "Group names should be short concrete noun phrases, never generic labels like Misc, Other, General, or Stuff.",
   "Allowed colors are grey, blue, red, yellow, green, pink, purple, cyan, and orange."
 ].join(" ");
-
-const DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS = 12000;
 
 type JsonObject = Record<string, any>;
 type ProviderSettings = Pick<Settings, "provider"> & Partial<Settings>;
@@ -80,7 +80,7 @@ export async function createGroupPlanWithFallback(
       usedFallback: false,
       providerError: "",
       providerErrorKind: "",
-      ...timingFieldsFromPlan(plan)
+      ...timingFieldsFromPlan(plan, settings)
     };
   }
 
@@ -92,7 +92,7 @@ export async function createGroupPlanWithFallback(
       usedFallback: false,
       providerError: "",
       providerErrorKind: "",
-      ...timingFieldsFromPlan(plan)
+      ...timingFieldsFromPlan(plan, settings)
     };
   } catch (error) {
     const providerError = normalizeProviderError(error);
@@ -107,13 +107,13 @@ export async function createGroupPlanWithFallback(
       usedFallback: true,
       providerError: providerError.message,
       providerErrorKind: providerError.kind,
-      ...timingFieldsFromPlan(plan)
+      ...timingFieldsFromPlan(plan, { ...settings, provider: "heuristic" })
     };
   }
 }
 
 async function createPlanWithChromeAI(tabs: PromptTabRecord[], settings: ProviderSettings, existingGroups: ExistingGroup[]): Promise<RawTabGroupPlan> {
-  const timeoutMs = getProviderRequestTimeoutMs(settings);
+  const timeoutMs = getProviderRequestTimeoutMs(settings.providerRequestTimeoutSeconds);
   const LanguageModelCtor = (globalThis as typeof globalThis & { LanguageModel?: typeof LanguageModel }).LanguageModel;
   if (!LanguageModelCtor) {
     throw new Error("Chrome built-in AI is not available in this browser.");
@@ -199,7 +199,7 @@ async function createPlanWithOpenAI(tabs: PromptTabRecord[], settings: ProviderS
         }
       }
     })
-  }, getProviderRequestTimeoutMs(settings));
+  }, getProviderRequestTimeoutMs(settings.providerRequestTimeoutSeconds));
 
   const durationMs = Date.now() - start;
   const json = await response.json().catch(() => null) as JsonObject | null;
@@ -245,7 +245,7 @@ async function createPlanWithAnthropic(tabs: PromptTabRecord[], settings: Provid
         }
       ]
     })
-  }, getProviderRequestTimeoutMs(settings));
+  }, getProviderRequestTimeoutMs(settings.providerRequestTimeoutSeconds));
 
   const durationMs = Date.now() - start;
   const json = await response.json().catch(() => null) as JsonObject | null;
@@ -262,13 +262,23 @@ async function createPlanWithAnthropic(tabs: PromptTabRecord[], settings: Provid
   return plan;
 }
 
-function timingFieldsFromPlan(plan: RawTabGroupPlan | TabGroupPlan) {
+function timingFieldsFromPlan(plan: RawTabGroupPlan | TabGroupPlan, settings: ProviderSettings) {
   const timing = plan?.timing || {};
+  const reportedCost = typeof timing.costUsd === "number" && Number.isFinite(timing.costUsd) && timing.costUsd >= 0
+    ? timing.costUsd
+    : undefined;
+  const estimatedCost = reportedCost !== undefined
+    ? undefined
+    : estimateProviderUsageCost(settings, timing.inputTokens, timing.outputTokens);
+  const costBasis: ProviderResult["costBasis"] = reportedCost !== undefined
+    ? "reported"
+    : estimatedCost === undefined ? undefined : "api-estimate";
   return omitUndefined({
     durationMs: timing.durationMs,
     inputTokens: timing.inputTokens,
     outputTokens: timing.outputTokens,
-    costUsd: timing.costUsd
+    costUsd: reportedCost ?? estimatedCost,
+    costBasis
   });
 }
 
@@ -376,14 +386,6 @@ async function withProviderTimeout<T>(providerLabel: string, callback: () => Pro
   }
 }
 
-function getProviderRequestTimeoutMs(settings: Partial<Settings>): number {
-  const rawTimeoutMs = Number(settings.providerRequestTimeoutMs);
-  if (!Number.isFinite(rawTimeoutMs)) {
-    return DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS;
-  }
-  return Math.max(100, Math.min(30000, Math.trunc(rawTimeoutMs)));
-}
-
 function providerTimeoutError(providerLabel: string, timeoutMs: number) {
   return createProviderError(
     "provider-timeout",
@@ -404,7 +406,7 @@ async function ensureProviderHostPermission(provider: Provider): Promise<void> {
   if (!globalThis.chrome?.permissions?.contains) {
     throw createProviderError(
       "missing-host-permission",
-      `${getProviderLabel(provider)} host permission is unavailable. Re-save the provider in options.`
+      `${getProviderLabel(provider)} host permission is unavailable. Re-select the provider in Options.`
     );
   }
 
@@ -412,7 +414,7 @@ async function ensureProviderHostPermission(provider: Provider): Promise<void> {
   if (!isGranted) {
     throw createProviderError(
       "missing-host-permission",
-      `${getProviderLabel(provider)} host permission is missing. Re-save the provider in options.`
+      `${getProviderLabel(provider)} host permission is missing. Re-select the provider in Options.`
     );
   }
 }

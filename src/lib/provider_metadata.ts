@@ -72,10 +72,12 @@ export function getLocalCliLabel(provider: Provider | string | undefined): strin
 }
 
 const FRIENDLY_ERROR_MESSAGES_BY_KIND: Partial<Record<ProviderErrorKind, string>> = {
-  "missing-native-permission": "Native Messaging permission is missing. Save this provider or grant permission.",
+  "provider-timeout": "The AI provider did not finish before the model timeout. Increase Model timeout in Options or choose a faster model or reasoning level.",
+  "missing-native-permission": "Native Messaging permission is missing. Open Options and grant access for the local CLI provider.",
   "native-host-not-found": "Native bridge is not installed. Run nub run native:install.",
   "native-host-forbidden": "Native bridge is not allowed for this extension ID. Reinstall the native host.",
-  "native-host-config-error": "Native bridge config is invalid. Reinstall the native host."
+  "native-host-config-error": "Native bridge config is invalid. Reinstall the native host.",
+  "cli-timeout": "The local CLI did not finish before the model timeout. Increase Model timeout in Options or choose a faster model or reasoning level."
 };
 
 export function getFriendlyProviderErrorMessage(error: unknown): string {

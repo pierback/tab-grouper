@@ -10,6 +10,8 @@ export type Provider =
 
 export type LocalCliProvider = "codex" | "claude";
 
+export type CostBasis = "reported" | "api-estimate";
+
 export interface NativeModelInfo {
   slug: string;
   displayName: string;
@@ -32,9 +34,10 @@ export interface Settings {
   allowHeuristicFallback: boolean;
   ignorePinnedTabs: boolean;
   keepExistingGroups: boolean;
-  collapseGroups: boolean;
   minimumGroupSize: number;
-  providerRequestTimeoutMs?: number;
+  autoTidyEnabled: boolean;
+  autoTidyIntervalMinutes: number;
+  providerRequestTimeoutSeconds: number;
 }
 
 export type PartialSettings = Partial<Settings> | Record<string, unknown>;
@@ -55,6 +58,7 @@ export interface PlanTiming {
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
+  costBasis?: CostBasis;
 }
 
 export interface TabGroupPlan {
@@ -113,6 +117,7 @@ export interface ProviderResult {
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
+  costBasis?: CostBasis;
 }
 
 export interface SkippedCounts {
@@ -170,12 +175,13 @@ export interface TidySnapshotGroup {
 }
 
 export interface TidySnapshot {
-  version: 1;
+  version: 2;
   createdAt: number;
   windowId: number;
   keepExistingGroups: boolean;
   tabs: TidySnapshotTab[];
   groups: TidySnapshotGroup[];
+  groupIdsCollapsedByTidy: number[];
   changedTabIds: number[];
   appliedGroups: AppliedGroup[];
   appliedAssignments: AppliedAssignment[];
@@ -188,6 +194,7 @@ export interface UndoPlan {
   canUndo: boolean;
   tabIdsToUngroup: number[];
   originalGroups: Array<TidySnapshotGroup & { tabIds: number[] }>;
+  groupCollapseUpdates: Array<{ groupId: number; collapsed: boolean }>;
   tabMoves: Array<{ tabId: number; index: number }>;
 }
 
@@ -269,6 +276,7 @@ export interface PopupResponse {
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
+  costBasis?: CostBasis;
   undoAvailable?: boolean;
 }
 

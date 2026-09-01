@@ -6,10 +6,17 @@
     <title>Tab Grouper Options</title>
     <link rel="stylesheet" href="styles.css">
   </head>
-  <body>
+  <body class="options-page">
     <main class="options-shell">
       <header class="page-header">
-        <h1>Tab Grouper</h1>
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">TG</span>
+          <div class="brand-copy">
+            <span class="eyebrow">Configuration</span>
+            <h1>Tab Grouper</h1>
+            <p class="page-subtitle">Choose how tabs are understood, grouped, and handled.</p>
+          </div>
+        </div>
       </header>
 
       <form id="settings-form" class="settings-form">
@@ -33,6 +40,10 @@
             </div>
             <p id="data-summary"></p>
           </div>
+          <label class="field compact-field">
+            <span>Model timeout <small>seconds</small></span>
+            <input id="providerRequestTimeoutSeconds" name="providerRequestTimeoutSeconds" type="number" min="180" max="300" step="30">
+          </label>
         </section>
 
         <section class="section provider-section" data-provider-section="openai">
@@ -85,10 +96,6 @@
             <span>Leave existing groups untouched</span>
           </label>
           <label class="checkbox-field">
-            <input id="collapseGroups" name="collapseGroups" type="checkbox">
-            <span>Collapse groups after tidying</span>
-          </label>
-          <label class="checkbox-field">
             <input id="includeFullUrls" name="includeFullUrls" type="checkbox">
             <span>Send full URLs to AI providers</span>
           </label>
@@ -106,8 +113,21 @@
           </label>
         </section>
 
-        <footer class="form-footer">
-          <button class="primary-button" type="submit">Save</button>
+        <section class="section automation-section">
+          <h2>Automation</h2>
+          <label class="checkbox-field">
+            <input id="autoTidyEnabled" name="autoTidyEnabled" type="checkbox">
+            <span>Automatically tidy open windows</span>
+          </label>
+          <label class="field compact-field">
+            <span>Run every <small>minutes</small></span>
+            <input id="autoTidyIntervalMinutes" name="autoTidyIntervalMinutes" type="number" min="1" max="1440" step="1">
+          </label>
+          <p class="helper-text">Runs quietly across normal Chrome windows. Every completed tidy leaves its latest undo available.</p>
+        </section>
+
+        <footer class="autosave-bar">
+          <span class="autosave-copy">Changes save automatically</span>
           <span id="save-status" class="save-status" aria-live="polite"></span>
         </footer>
       </form>

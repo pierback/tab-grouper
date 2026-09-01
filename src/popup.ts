@@ -2,15 +2,24 @@ import { getAllProviderOrigins, getFriendlyProviderErrorMessage, getProviderLabe
 import { pageHintPermissionPatternsForTabs, shouldUsePageHints } from "./lib/page_hints.js";
 import { normalizeSettings } from "./lib/settings.js";
 import { isGroupableTab } from "./lib/tabs.js";
-import type { PopupResponse, ProviderError } from "./lib/types.js";
+import type { PopupResponse, ProviderError, Settings } from "./lib/types.js";
 
 const tidyButton = document.querySelector<HTMLButtonElement>("#tidy-button")!;
 const result = document.querySelector<HTMLElement>("#result")!;
 const providerLabel = document.querySelector<HTMLElement>("#provider-label")!;
+const providerMeta = document.querySelector<HTMLElement>("#provider-meta")!;
 const tabCount = document.querySelector<HTMLElement>("#tab-count")!;
+const autoTidyStatus = document.querySelector<HTMLElement>("#auto-tidy-status")!;
 const optionsButton = document.querySelector<HTMLButtonElement>("#open-options")!;
 const previewButton = document.querySelector<HTMLButtonElement>("#preview-button")!;
 const undoButton = document.querySelector<HTMLButtonElement>("#undo-button")!;
+
+interface RunProgressController {
+  setMessage(message: string): void;
+  stop(): number;
+}
+
+let activeRunProgress: RunProgressController | undefined;
 
 initPopup();
 
@@ -20,7 +29,7 @@ optionsButton.addEventListener("click", () => {
 
 tidyButton.addEventListener("click", async () => {
   setBusy(true, "tidy");
-  renderMessage("Tidying current window...");
+  const progress = startRunProgress("Tidying current window");
 
   try {
     const currentWindow = await chrome.windows.getCurrent();
@@ -36,18 +45,19 @@ tidyButton.addEventListener("click", async () => {
       throw createResponseError(response, "Unable to tidy tabs.");
     }
 
-    renderResult(response);
+    renderResult(response, progress.stop());
     updateUndoButton(Boolean(response.undoAvailable));
   } catch (error) {
-    renderError(getFriendlyProviderErrorMessage(error));
+    renderError(getFriendlyProviderErrorMessage(error), progress.stop());
   } finally {
+    progress.stop();
     setBusy(false);
   }
 });
 
 previewButton.addEventListener("click", async () => {
   setBusy(true, "preview");
-  renderMessage("Planning current window...");
+  const progress = startRunProgress("Planning current window");
 
   try {
     const currentWindow = await chrome.windows.getCurrent();
@@ -62,10 +72,11 @@ previewButton.addEventListener("click", async () => {
       throw createResponseError(response, "Unable to preview tabs.");
     }
 
-    renderResult(response);
+    renderResult(response, progress.stop());
   } catch (error) {
-    renderError(getFriendlyProviderErrorMessage(error));
+    renderError(getFriendlyProviderErrorMessage(error), progress.stop());
   } finally {
+    progress.stop();
     setBusy(false);
   }
 });
@@ -113,7 +124,7 @@ async function preparePageHintPermissions(windowId: number | undefined): Promise
     origins
   });
   if (!granted) {
-    renderMessage("Tidying current window without page hints...");
+    activeRunProgress?.setMessage("Continuing without page hints");
     return [];
   }
   return origins;
@@ -127,12 +138,19 @@ async function initPopup() {
       chrome.tabs.query({ windowId: currentWindow.id })
     ]);
 
-    providerLabel.textContent = getProviderLabel(status?.settings?.provider || "unknown");
+    const settings = normalizeSettings(status?.settings);
+    providerLabel.textContent = getProviderLabel(settings.provider);
+    providerMeta.textContent = getProviderConfiguration(settings);
     tabCount.textContent = `${tabs.length} tab${tabs.length === 1 ? "" : "s"}`;
+    autoTidyStatus.textContent = settings.autoTidyEnabled
+      ? `Every ${formatMinuteInterval(settings.autoTidyIntervalMinutes)}`
+      : "Off";
     updateUndoButton(Boolean(status?.undoAvailable));
   } catch (error) {
     providerLabel.textContent = "Unavailable";
+    providerMeta.textContent = "";
     tabCount.textContent = "-";
+    autoTidyStatus.textContent = "-";
     renderError(error instanceof Error ? error.message : String(error));
   }
 }
@@ -146,14 +164,14 @@ function setBusy(isBusy: boolean, action = "tidy"): void {
   undoButton.textContent = isBusy && action === "undo" ? "Undoing..." : "Undo last tidy";
 }
 
-function renderResult(response: PopupResponse): void {
+function renderResult(response: PopupResponse, elapsedMs: number): void {
   result.className = "result";
-  result.innerHTML = "";
+  result.replaceChildren();
   const title = document.createElement("p");
   title.className = "result-title";
   title.textContent = response.message || "No groups created.";
   result.append(title);
-  appendProviderMetrics(response);
+  appendRunStats(response, elapsedMs);
   appendProviderDetails(response);
 
   if (!response.groups?.length && !response.assignments?.length) {
@@ -175,37 +193,51 @@ function renderResult(response: PopupResponse): void {
   result.append(list);
 }
 
-function appendProviderMetrics(response: PopupResponse): void {
-  const metricsText = buildProviderMetricsText(response);
-  if (!metricsText) {
-    return;
-  }
-  const metrics = document.createElement("p");
-  metrics.className = "provider-details";
-  metrics.textContent = metricsText;
-  result.append(metrics);
+function appendRunStats(response: PopupResponse, elapsedMs: number): void {
+  const stats = document.createElement("div");
+  stats.className = "run-stats";
+
+  const providerDuration = finiteNonNegativeNumber(response.durationMs);
+  stats.append(createRunStat(
+    "Elapsed",
+    formatDuration(elapsedMs),
+    providerDuration === undefined ? "Wall clock" : `${formatDuration(providerDuration)} provider`
+  ));
+
+  const inputTokens = finiteNonNegativeNumber(response.inputTokens);
+  const outputTokens = finiteNonNegativeNumber(response.outputTokens);
+  const hasTokens = inputTokens !== undefined || outputTokens !== undefined;
+  stats.append(createRunStat(
+    "Tokens",
+    hasTokens ? formatInteger((inputTokens || 0) + (outputTokens || 0)) : "—",
+    hasTokens ? `${formatInteger(inputTokens || 0)} in · ${formatInteger(outputTokens || 0)} out` : "Not reported"
+  ));
+
+  const costUsd = finiteNonNegativeNumber(response.costUsd);
+  const isEstimate = response.costBasis === "api-estimate";
+  stats.append(createRunStat(
+    isEstimate ? "Est. cost" : "Cost",
+    costUsd === undefined ? "—" : `${isEstimate ? "~" : ""}${formatUsd(costUsd)}`,
+    costUsd === undefined ? "Not available" : isEstimate ? "API equivalent" : "Provider reported"
+  ));
+
+  result.append(stats);
 }
 
-function buildProviderMetricsText(response: PopupResponse): string {
-  const durationMs = Number(response.durationMs);
-  if (!Number.isFinite(durationMs)) {
-    return "";
-  }
-
-  const parts = [
-    getProviderLabel(response.provider || "heuristic"),
-    `${(durationMs / 1000).toFixed(1)}s`
-  ];
-  const inputTokens = Number(response.inputTokens);
-  const outputTokens = Number(response.outputTokens);
-  if (Number.isFinite(inputTokens) || Number.isFinite(outputTokens)) {
-    parts.push(`~${(Number.isFinite(inputTokens) ? inputTokens : 0) + (Number.isFinite(outputTokens) ? outputTokens : 0)} tokens`);
-  }
-  const costUsd = Number(response.costUsd);
-  if (Number.isFinite(costUsd)) {
-    parts.push(`$${costUsd.toFixed(4)}`);
-  }
-  return parts.join(" · ");
+function createRunStat(label: string, value: string, detail: string): HTMLElement {
+  const stat = document.createElement("div");
+  stat.className = "run-stat";
+  const statLabel = document.createElement("span");
+  statLabel.className = "run-stat-label";
+  statLabel.textContent = label;
+  const statValue = document.createElement("strong");
+  statValue.className = "run-stat-value";
+  statValue.textContent = value;
+  const statDetail = document.createElement("span");
+  statDetail.className = "run-stat-detail";
+  statDetail.textContent = detail;
+  stat.append(statLabel, statValue, statDetail);
+  return stat;
 }
 
 function appendProviderDetails(response: PopupResponse): void {
@@ -253,9 +285,128 @@ function renderMessage(message: string): void {
   result.textContent = message;
 }
 
-function renderError(message: string): void {
+function renderError(message: string, elapsedMs?: number): void {
   result.className = "result error";
-  result.textContent = message;
+  result.replaceChildren();
+  const errorMessage = document.createElement("p");
+  errorMessage.className = "error-message";
+  errorMessage.textContent = message;
+  result.append(errorMessage);
+  if (elapsedMs !== undefined) {
+    appendRunStats({ ok: false }, elapsedMs);
+  }
+}
+
+function startRunProgress(message: string): RunProgressController {
+  const startedAt = nowMs();
+  let stoppedAt: number | undefined;
+  result.className = "result running";
+  result.replaceChildren();
+
+  const progress = document.createElement("div");
+  progress.className = "run-progress";
+  const copy = document.createElement("span");
+  copy.className = "run-progress-copy";
+  copy.textContent = message;
+  const clock = document.createElement("strong");
+  clock.className = "run-clock";
+  clock.textContent = formatDuration(0);
+  clock.setAttribute("aria-hidden", "true");
+  progress.append(copy, clock);
+  result.append(progress);
+
+  const timer = globalThis.setInterval(() => {
+    clock.textContent = formatDuration(nowMs() - startedAt);
+  }, 100);
+
+  const controller: RunProgressController = {
+    setMessage(nextMessage) {
+      copy.textContent = nextMessage;
+    },
+    stop() {
+      if (stoppedAt === undefined) {
+        stoppedAt = nowMs();
+        globalThis.clearInterval(timer);
+        if (activeRunProgress === controller) {
+          activeRunProgress = undefined;
+        }
+      }
+      return Math.max(0, stoppedAt - startedAt);
+    }
+  };
+  activeRunProgress?.stop();
+  activeRunProgress = controller;
+  return controller;
+}
+
+function getProviderConfiguration(settings: Settings): string {
+  switch (settings.provider) {
+    case "local-codex-cli":
+      return `${settings.codexCliModel || "CLI default model"} · ${formatReasoning(settings.codexReasoningEffort)}`;
+    case "local-claude-cli":
+      return `${settings.claudeCliModel || "CLI default model"} · ${formatReasoning(settings.claudeReasoningEffort)}`;
+    case "openai":
+      return `${settings.openaiModel} · Default reasoning`;
+    case "anthropic":
+      return `${settings.anthropicModel} · Default reasoning`;
+    case "chrome-ai":
+      return "Browser model · Default reasoning";
+    default:
+      return "No model · No reasoning";
+  }
+}
+
+function formatReasoning(reasoning: string): string {
+  if (!reasoning) {
+    return "Default reasoning";
+  }
+  return `${reasoning.charAt(0).toUpperCase()}${reasoning.slice(1)} reasoning`;
+}
+
+function formatMinuteInterval(minutes: number): string {
+  if (minutes === 60) {
+    return "hour";
+  }
+  if (minutes > 60 && minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return `${hours} hours`;
+  }
+  return `${minutes} min`;
+}
+
+function formatDuration(durationMs: number): string {
+  const seconds = Math.max(0, durationMs) / 1000;
+  if (seconds < 0.05) {
+    return "<0.1s";
+  }
+  return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+}
+
+function formatInteger(value: number): string {
+  return Math.round(value).toLocaleString("en-US");
+}
+
+function formatUsd(value: number): string {
+  if (value === 0) {
+    return "$0.0000";
+  }
+  if (value < 0.0001) {
+    return `$${value.toFixed(6)}`;
+  }
+  if (value < 1) {
+    return `$${value.toFixed(4)}`;
+  }
+  return `$${value.toFixed(2)}`;
+}
+
+function finiteNonNegativeNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function nowMs(): number {
+  return globalThis.performance?.now?.() ?? Date.now();
 }
 
 function escapeHtml(value: unknown): string {

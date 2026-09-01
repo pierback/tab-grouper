@@ -1,4 +1,8 @@
 import type { PartialSettings, Provider, Settings } from "./types.js";
+import {
+  DEFAULT_PROVIDER_REQUEST_TIMEOUT_SECONDS,
+  normalizeProviderRequestTimeoutSeconds
+} from "./provider_timeout.js";
 
 export const DEFAULT_SETTINGS = {
   provider: "heuristic",
@@ -15,8 +19,10 @@ export const DEFAULT_SETTINGS = {
   allowHeuristicFallback: true,
   ignorePinnedTabs: true,
   keepExistingGroups: true,
-  collapseGroups: false,
-  minimumGroupSize: 2
+  minimumGroupSize: 2,
+  autoTidyEnabled: false,
+  autoTidyIntervalMinutes: 30,
+  providerRequestTimeoutSeconds: DEFAULT_PROVIDER_REQUEST_TIMEOUT_SECONDS
 } as const satisfies Settings;
 
 export const ALLOWED_PROVIDERS = new Set<Provider>([
@@ -58,8 +64,10 @@ export function publicSettingsSummary(settings: PartialSettings) {
     allowHeuristicFallback: normalizedSettings.allowHeuristicFallback,
     ignorePinnedTabs: normalizedSettings.ignorePinnedTabs,
     keepExistingGroups: normalizedSettings.keepExistingGroups,
-    collapseGroups: normalizedSettings.collapseGroups,
-    minimumGroupSize: normalizedSettings.minimumGroupSize
+    minimumGroupSize: normalizedSettings.minimumGroupSize,
+    autoTidyEnabled: normalizedSettings.autoTidyEnabled,
+    autoTidyIntervalMinutes: normalizedSettings.autoTidyIntervalMinutes,
+    providerRequestTimeoutSeconds: normalizedSettings.providerRequestTimeoutSeconds
   };
 }
 
@@ -84,8 +92,10 @@ export function normalizeSettings(rawSettings: PartialSettings = {}): Settings {
     allowHeuristicFallback: raw.allowHeuristicFallback !== false,
     ignorePinnedTabs: raw.ignorePinnedTabs !== false,
     keepExistingGroups: raw.keepExistingGroups !== false,
-    collapseGroups: raw.collapseGroups === true,
-    minimumGroupSize: clampNumber(raw.minimumGroupSize, 2, 10, DEFAULT_SETTINGS.minimumGroupSize)
+    minimumGroupSize: clampNumber(raw.minimumGroupSize, 2, 10, DEFAULT_SETTINGS.minimumGroupSize),
+    autoTidyEnabled: raw.autoTidyEnabled === true,
+    autoTidyIntervalMinutes: clampNumber(raw.autoTidyIntervalMinutes, 1, 1440, DEFAULT_SETTINGS.autoTidyIntervalMinutes),
+    providerRequestTimeoutSeconds: normalizeProviderRequestTimeoutSeconds(raw.providerRequestTimeoutSeconds)
   };
 }
 

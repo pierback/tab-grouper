@@ -24,8 +24,10 @@ const normalized = normalizeSettings({
   allowHeuristicFallback: false,
   ignorePinnedTabs: "false",
   keepExistingGroups: "false",
-  collapseGroups: "true",
-  minimumGroupSize: 1
+  minimumGroupSize: 1,
+  autoTidyEnabled: "true",
+  autoTidyIntervalMinutes: 0,
+  providerRequestTimeoutSeconds: 999
 });
 
 assert.equal(normalized.provider, "heuristic");
@@ -42,8 +44,11 @@ assert.equal(normalized.includePageHints, false);
 assert.equal(normalized.allowHeuristicFallback, false);
 assert.equal(normalized.ignorePinnedTabs, true);
 assert.equal(normalized.keepExistingGroups, true);
-assert.equal(normalized.collapseGroups, false);
 assert.equal(normalized.minimumGroupSize, 2);
+assert.equal(normalized.autoTidyEnabled, false);
+assert.equal(normalized.autoTidyIntervalMinutes, 1);
+assert.equal(normalized.providerRequestTimeoutSeconds, 300);
+assert.equal(normalizeSettings({ providerRequestTimeoutSeconds: 120 }).providerRequestTimeoutSeconds, 180);
 
 assert.deepEqual(
   publicSettingsSummary({
@@ -53,7 +58,6 @@ assert.deepEqual(
     allowHeuristicFallback: false,
     ignorePinnedTabs: false,
     keepExistingGroups: false,
-    collapseGroups: true,
     minimumGroupSize: 99
   }),
   {
@@ -69,8 +73,10 @@ assert.deepEqual(
     allowHeuristicFallback: false,
     ignorePinnedTabs: false,
     keepExistingGroups: false,
-    collapseGroups: true,
-    minimumGroupSize: 10
+    minimumGroupSize: 10,
+    autoTidyEnabled: false,
+    autoTidyIntervalMinutes: 30,
+    providerRequestTimeoutSeconds: 180
   }
 );
 
@@ -114,7 +120,10 @@ await saveSettings({
   codexCliModel: "x".repeat(120),
   claudeCliModel: " ",
   codexReasoningEffort: "x".repeat(40),
-  claudeReasoningEffort: " "
+  claudeReasoningEffort: " ",
+  autoTidyEnabled: true,
+  autoTidyIntervalMinutes: 45,
+  providerRequestTimeoutSeconds: 180
 });
 
 assert.equal(storageState.provider, "local-codex-cli");
@@ -127,5 +136,8 @@ assert.equal(storageState.codexCliModel!.length, 80);
 assert.equal(storageState.claudeCliModel, "");
 assert.equal(storageState.codexReasoningEffort!.length, 16);
 assert.equal(storageState.claudeReasoningEffort, "");
+assert.equal(storageState.autoTidyEnabled, true);
+assert.equal(storageState.autoTidyIntervalMinutes, 45);
+assert.equal(storageState.providerRequestTimeoutSeconds, 180);
 
 console.log("Settings tests passed.");

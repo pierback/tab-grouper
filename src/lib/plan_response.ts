@@ -24,6 +24,7 @@ type PlanResponseProviderResult = Pick<ProviderResult, "usedFallback"> & Partial
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  costBasis: ProviderResult["costBasis"];
 }>;
 
 type ResponsePlanGroup = Pick<PlanGroup, "name" | "tabIds"> & { color?: string };
@@ -69,6 +70,7 @@ export function createPlanResponse(planResult: PlanResponseInput, extras: PlanRe
     inputTokens: planResult.providerResult.inputTokens,
     outputTokens: planResult.providerResult.outputTokens,
     costUsd: planResult.providerResult.costUsd,
+    costBasis: planResult.providerResult.costBasis,
     undoAvailable: extras.undoAvailable ?? false,
     message: buildPlanMessage(planResult, extras),
     ...(extras.preview === undefined ? {} : { preview: extras.preview })

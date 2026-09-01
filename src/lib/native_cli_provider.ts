@@ -1,5 +1,6 @@
 import { Cause, Effect, Exit, Option } from "effect";
 import { createProviderError, omitUndefined } from "./provider_result.js";
+import { getProviderRequestTimeoutMs } from "./provider_timeout.js";
 import type {
   ExistingGroup,
   LocalCliProvider,
@@ -15,15 +16,14 @@ import type {
 type NativeCliSettings = Partial<Settings>;
 
 export const NATIVE_HOST_NAME = "com.fabianpieringer.tab_grouper";
-const NATIVE_PROTOCOL_VERSION = 2 as const;
+const NATIVE_PROTOCOL_VERSION = 3 as const;
 const REQUEST_TYPE = "TAB_GROUP_PLAN_REQUEST";
 const STATUS_REQUEST_TYPE = "NATIVE_HOST_STATUS_REQUEST";
 const LIST_MODELS_REQUEST_TYPE = "NATIVE_HOST_LIST_MODELS_REQUEST";
 const RESPONSE_TYPE = "TAB_GROUP_PLAN_RESPONSE";
-const DEFAULT_TIMEOUT_MS = 15000;
 const STATUS_TIMEOUT_MS = 3000;
 const LIST_MODELS_TIMEOUT_MS = 5000;
-const EXTENSION_TIMEOUT_MARGIN_MS = 2500;
+const EXTENSION_TIMEOUT_MARGIN_MS = 5000;
 
 interface NativePlanRequest {
   version: typeof NATIVE_PROTOCOL_VERSION;
@@ -94,7 +94,7 @@ export async function createPlanWithNativeCli(
 ): Promise<RawTabGroupPlan> {
   await ensureNativeMessagingPermission();
 
-  const timeoutMs = getNativeRequestTimeoutMs(settings);
+  const timeoutMs = getProviderRequestTimeoutMs(settings.providerRequestTimeoutSeconds);
   const requestId = createRequestId();
   const request: NativePlanRequest = {
     version: NATIVE_PROTOCOL_VERSION,
@@ -192,7 +192,7 @@ function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest | Na
         return;
       }
       if (response.version !== request.version) {
-        const message = response.version === 1
+        const message = Number(response.version) < NATIVE_PROTOCOL_VERSION
           ? "Native bridge is outdated. Reinstall it with nub run native:install."
           : "Native bridge protocol does not match this extension. Rebuild the extension and reinstall the native host from the same checkout.";
         resume(Effect.fail(createProviderError("native-host-protocol-error", message)));
@@ -260,12 +260,12 @@ function normalizeCliProvider(provider: Provider | LocalCliProvider): LocalCliPr
 
 async function ensureNativeMessagingPermission() {
   if (!globalThis.chrome?.permissions?.contains) {
-    throw createProviderError("missing-native-permission", "Native messaging permission is unavailable. Re-save the provider in options.");
+    throw createProviderError("missing-native-permission", "Native messaging permission is unavailable. Re-select the provider in Options.");
   }
 
   const hasPermission = await chrome.permissions.contains({ permissions: ["nativeMessaging"] });
   if (!hasPermission) {
-    throw createProviderError("missing-native-permission", "Native messaging permission is missing. Re-save the provider in options.");
+    throw createProviderError("missing-native-permission", "Native messaging permission is missing. Re-select the provider in Options.");
   }
 }
 
@@ -285,14 +285,6 @@ function readErrorMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return String(error || fallback);
-}
-
-function getNativeRequestTimeoutMs(settings: NativeCliSettings): number {
-  const rawTimeoutMs = Number(settings.providerRequestTimeoutMs);
-  if (!Number.isFinite(rawTimeoutMs)) {
-    return DEFAULT_TIMEOUT_MS;
-  }
-  return Math.max(1000, Math.min(30000, Math.trunc(rawTimeoutMs)));
 }
 
 function createRequestId() {

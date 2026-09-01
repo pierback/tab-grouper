@@ -9,26 +9,46 @@
   <body class="popup">
     <main class="popup-shell">
       <header class="popup-header">
-        <h1>Tab Grouper</h1>
-        <button id="open-options" class="icon-button text-icon-button" type="button" title="Open options" aria-label="Open options">Options</button>
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">TG</span>
+          <div class="brand-copy">
+            <span class="eyebrow">Window organizer</span>
+            <h1>Tab Grouper</h1>
+          </div>
+        </div>
+        <button id="open-options" class="icon-button text-icon-button" type="button" title="Open options" aria-label="Open options">
+          <span>Options</span>
+          <span class="button-arrow" aria-hidden="true">&#8599;</span>
+        </button>
       </header>
 
-      <section class="status-panel">
-        <div class="status-row">
-          <span class="label">Provider</span>
-          <strong id="provider-label">Loading</strong>
-        </div>
-        <div class="status-row">
-          <span class="label">Window</span>
-          <strong id="tab-count">-</strong>
-        </div>
-      </section>
+      <div class="popup-content">
+        <section class="status-panel" aria-label="Current window status">
+          <div class="status-row">
+            <span class="label">Provider</span>
+            <span class="status-value">
+              <strong id="provider-label">Loading</strong>
+              <span id="provider-meta" class="status-meta"></span>
+            </span>
+          </div>
+          <div class="status-row">
+            <span class="label">This window</span>
+            <strong id="tab-count">-</strong>
+          </div>
+          <div class="status-row">
+            <span class="label">Auto tidy</span>
+            <strong id="auto-tidy-status">-</strong>
+          </div>
+        </section>
 
-      <button id="tidy-button" class="primary-button" type="button">Tidy tabs</button>
-      <button id="preview-button" class="secondary-button" type="button">Preview plan</button>
-      <button id="undo-button" class="secondary-button" type="button" hidden>Undo last tidy</button>
+        <div class="popup-actions">
+          <button id="tidy-button" class="primary-button" type="button">Tidy tabs</button>
+          <button id="preview-button" class="secondary-button" type="button">Preview plan</button>
+          <button id="undo-button" class="secondary-button" type="button" hidden>Undo last tidy</button>
+        </div>
 
-      <section id="result" class="result" aria-live="polite"></section>
+        <section id="result" class="result" aria-live="polite" aria-atomic="false"></section>
+      </div>
     </main>
     <script type="module" src="dist/popup.js"></script>
   </body>

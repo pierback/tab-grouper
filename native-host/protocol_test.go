@@ -24,7 +24,7 @@ func TestNativeMessageRoundTrip(t *testing.T) {
 		t.Fatalf("missing size prefix")
 	}
 	payload := buffer.Bytes()
-	if !bytes.Contains(payload, []byte(`"version":2`)) {
+	if !bytes.Contains(payload, []byte(`"version":3`)) {
 		t.Fatalf("payload did not include current protocol version: %s", string(payload))
 	}
 	if !bytes.Contains(payload, []byte(`"requestId":"req-1"`)) {
@@ -58,6 +58,14 @@ func TestValidateRequestRejectsOldProtocolVersion(t *testing.T) {
 	request.Version = 1
 	if err := ValidateRequest(request); err == nil || err.Error() != "unsupported protocol version" {
 		t.Fatalf("expected old protocol version to fail, got %v", err)
+	}
+}
+
+func TestValidateRequestAcceptsTwoMinuteModelTimeout(t *testing.T) {
+	request := validRequest()
+	request.TimeoutMS = 120000
+	if err := ValidateRequest(request); err != nil {
+		t.Fatalf("expected two-minute model timeout to validate: %v", err)
 	}
 }
 

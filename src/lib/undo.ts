@@ -34,8 +34,17 @@ export function createTidySnapshot({
   settings
 }: CreateTidySnapshotParams): TidySnapshot {
   const changedIds = uniqueIntegerIds(changedTabIds);
+  const snapshotGroups = groups
+    .filter((group) => Number.isInteger(group.id))
+    .map((group) => ({
+      id: group.id as number,
+      title: group.title || "",
+      color: (group.color || "grey") as TabGroupColor,
+      collapsed: Boolean(group.collapsed),
+      windowId: group.windowId
+    }));
   return {
-    version: 1,
+    version: 2,
     createdAt: Date.now(),
     windowId,
     keepExistingGroups: Boolean(settings.keepExistingGroups),
@@ -47,15 +56,10 @@ export function createTidySnapshot({
         windowId: tab.windowId,
         index: tab.index
       })),
-    groups: groups
-      .filter((group) => Number.isInteger(group.id))
-      .map((group) => ({
-        id: group.id as number,
-        title: group.title || "",
-        color: (group.color || "grey") as TabGroupColor,
-        collapsed: Boolean(group.collapsed),
-        windowId: group.windowId
-      })),
+    groups: snapshotGroups,
+    groupIdsCollapsedByTidy: snapshotGroups
+      .filter((group) => !group.collapsed)
+      .map((group) => group.id),
     changedTabIds: changedIds,
     appliedGroups: appliedGroups.map((group) => ({
       id: group.id,
@@ -71,12 +75,17 @@ export function createTidySnapshot({
   };
 }
 
-export function createUndoPlan(snapshot: unknown, currentTabs: EnrichedTab[]): UndoPlan {
+export function createUndoPlan(
+  snapshot: unknown,
+  currentTabs: EnrichedTab[],
+  currentGroups: Array<Pick<chrome.tabGroups.TabGroup, "id" | "collapsed">>
+): UndoPlan {
   if (!isUsableSnapshot(snapshot)) {
     return {
       canUndo: false,
       tabIdsToUngroup: [],
       originalGroups: [],
+      groupCollapseUpdates: [],
       tabMoves: []
     };
   }
@@ -91,6 +100,7 @@ export function createUndoPlan(snapshot: unknown, currentTabs: EnrichedTab[]): U
     .filter((tabId) => currentTabById.has(tabId));
   const appliedGroupIds = createAppliedGroupIdSet(snapshot);
   const assignedGroupByTabId = createAssignedGroupByTabId(snapshot);
+  const groupCollapseUpdates = createGroupCollapseUpdates(snapshot, currentGroups);
   const undoableChangedTabIds = changedTabIds.filter((tabId) => {
     const currentTab = currentTabById.get(tabId);
     if (!currentTab) {
@@ -121,9 +131,10 @@ export function createUndoPlan(snapshot: unknown, currentTabs: EnrichedTab[]): U
 
   if (snapshot.keepExistingGroups) {
     return {
-      canUndo: tabIdsToUngroup.length > 0,
+      canUndo: tabIdsToUngroup.length > 0 || groupCollapseUpdates.length > 0,
       tabIdsToUngroup,
       originalGroups: [],
+      groupCollapseUpdates,
       tabMoves
     };
   }
@@ -159,9 +170,10 @@ export function createUndoPlan(snapshot: unknown, currentTabs: EnrichedTab[]): U
   }
 
   return {
-    canUndo: tabIdsToUngroup.length > 0 || originalGroups.length > 0,
+    canUndo: tabIdsToUngroup.length > 0 || originalGroups.length > 0 || groupCollapseUpdates.length > 0,
     tabIdsToUngroup,
     originalGroups,
+    groupCollapseUpdates,
     tabMoves
   };
 }
@@ -170,9 +182,11 @@ export function isUsableSnapshot(snapshot: unknown): snapshot is TidySnapshot {
   const candidate = snapshot as Partial<TidySnapshot> | null | undefined;
   return Boolean(
     candidate &&
-      candidate.version === 1 &&
+      candidate.version === 2 &&
       Number.isInteger(candidate.windowId) &&
       Array.isArray(candidate.tabs) &&
+      Array.isArray(candidate.groups) &&
+      Array.isArray(candidate.groupIdsCollapsedByTidy) &&
       Array.isArray(candidate.changedTabIds)
   );
 }
@@ -210,4 +224,19 @@ function createAssignedGroupByTabId(snapshot: TidySnapshot): Map<number, number>
     }
   }
   return assignedGroupByTabId;
+}
+
+function createGroupCollapseUpdates(
+  snapshot: TidySnapshot,
+  currentGroups: Array<Pick<chrome.tabGroups.TabGroup, "id" | "collapsed">>
+): UndoPlan["groupCollapseUpdates"] {
+  const currentGroupById = new Map(currentGroups.map((group) => [group.id, group]));
+  const groupIdsCollapsedByTidy = new Set(uniqueIntegerIds(snapshot.groupIdsCollapsedByTidy));
+  return snapshot.groups.filter((group) => groupIdsCollapsedByTidy.has(group.id)).flatMap((originalGroup) => {
+    const currentGroup = currentGroupById.get(originalGroup.id);
+    if (!currentGroup || currentGroup.collapsed === originalGroup.collapsed) {
+      return [];
+    }
+    return [{ groupId: originalGroup.id, collapsed: originalGroup.collapsed }];
+  });
 }

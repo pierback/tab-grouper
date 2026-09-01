@@ -23,6 +23,9 @@ const testNativeBridgeButton = document.querySelector<HTMLButtonElement>("#test-
 const nativeBridgeStatus = document.querySelector<HTMLElement>("#native-bridge-status")!;
 const modelSelect = document.querySelector<HTMLSelectElement>("#model")!;
 const reasoningSelect = document.querySelector<HTMLSelectElement>("#reasoning")!;
+const autoTidyEnabledInput = document.querySelector<HTMLInputElement>("#autoTidyEnabled")!;
+const autoTidyIntervalInput = document.querySelector<HTMLInputElement>("#autoTidyIntervalMinutes")!;
+const providerTimeoutInput = document.querySelector<HTMLInputElement>("#providerRequestTimeoutSeconds")!;
 
 const CLAUDE_MODEL_OPTIONS: NativeModelInfo[] = [
   { slug: "claude-fable-5", displayName: "Fable 5" },
@@ -34,17 +37,43 @@ const CODEX_REASONING_LEVELS = ["low", "medium", "high", "xhigh"];
 const CLAUDE_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
 let currentSettings: Settings = DEFAULT_SETTINGS;
+let draftSettings: Settings = DEFAULT_SETTINGS;
+let activeProvider: Provider = DEFAULT_SETTINGS.provider;
 let codexModels: NativeModelInfo[] = [];
 let localCliControlSequence = 0;
-let formRevision = 0;
+let providerSelectionSequence = 0;
+let latestSaveIntent = 0;
+let saveQueue: Promise<unknown> = Promise.resolve();
+let autoSaveTimer: number | undefined;
 
 initOptions();
 
 providerSelect.addEventListener("change", async () => {
-  const provider = providerSelect.value;
+  const provider = providerSelect.value as Provider;
+  const sequence = ++providerSelectionSequence;
   updateProviderSections(provider);
-  await refreshLocalCliControls(provider, currentSettings, true);
   updateDataScope();
+  const controlRefresh = refreshLocalCliControls(provider, draftSettings, false);
+  setSaveStatus("Saving", false);
+
+  try {
+    await ensureProviderPermission(provider);
+    await controlRefresh;
+    if (sequence !== providerSelectionSequence || providerSelect.value !== provider) {
+      return;
+    }
+    activeProvider = provider;
+    await persistCurrentForm(true);
+  } catch (error) {
+    if (sequence !== providerSelectionSequence) {
+      return;
+    }
+    providerSelect.value = activeProvider;
+    updateProviderSections(activeProvider);
+    updateDataScope();
+    await refreshLocalCliControls(activeProvider, draftSettings, false);
+    setSaveStatus(error instanceof Error ? error.message : String(error), true);
+  }
 });
 
 modelSelect.addEventListener("change", () => {
@@ -52,65 +81,58 @@ modelSelect.addEventListener("change", () => {
   if (providerSelect.value === "local-codex-cli") {
     populateReasoningSelect(providerSelect.value, normalizeSettings(readFormSettings()));
   }
+  void persistCurrentForm();
 });
 
 reasoningSelect.addEventListener("change", () => {
   localCliControlSequence += 1;
+  void persistCurrentForm();
 });
 
 includeFullUrlsInput.addEventListener("change", () => {
   updateDataScope();
+  void persistCurrentForm();
 });
 
 includePageHintsInput?.addEventListener("change", () => {
   updateDataScope();
+  void persistCurrentForm();
 });
+
+autoTidyEnabledInput.addEventListener("change", () => {
+  updateAutoTidyControls();
+  void persistCurrentForm();
+});
+
+for (const input of getImmediateSaveInputs()) {
+  input.addEventListener("change", () => {
+    void persistCurrentForm();
+  });
+}
+
+for (const input of getDebouncedSaveInputs()) {
+  input.addEventListener("input", () => {
+    scheduleAutoSave();
+  });
+  input.addEventListener("change", () => {
+    void persistCurrentForm();
+  });
+}
 
 testNativeBridgeButton?.addEventListener("click", async () => {
   await testNativeBridge();
 });
 
-form.addEventListener("input", () => {
-  formRevision += 1;
-});
-
-form.addEventListener("submit", async (event) => {
+form.addEventListener("submit", (event) => {
   event.preventDefault();
-  setSaveStatus("Saving...", false);
-
-  try {
-    const settings = normalizeSettings(readFormSettings());
-    const controlSequence = localCliControlSequence;
-    const revision = formRevision;
-    await ensureProviderPermission(settings.provider);
-    await saveSettings(settings);
-    currentSettings = settings;
-    await removeUnusedProviderPermissions(settings.provider);
-    let expectedControlSequence = controlSequence;
-    if (providerSelect.value === settings.provider && localCliControlSequence === controlSequence) {
-      expectedControlSequence += 1;
-      await refreshLocalCliControls(settings.provider, settings, false);
-    }
-    updateDataScope();
-    const currentFormWasSaved = formRevision === revision &&
-      providerSelect.value === settings.provider &&
-      localCliControlSequence === expectedControlSequence;
-    if (currentFormWasSaved) {
-      setSaveStatus("Saved", false);
-      window.setTimeout(() => {
-        saveStatus.textContent = "";
-      }, 1800);
-    } else {
-      setSaveStatus("Settings changed while saving. Save again.", true);
-    }
-  } catch (error) {
-    setSaveStatus(error instanceof Error ? error.message : String(error), true);
-  }
+  void persistCurrentForm();
 });
 
 async function initOptions() {
   const settings = await getSettings();
   currentSettings = settings;
+  draftSettings = settings;
+  activeProvider = settings.provider;
   for (const [key, value] of Object.entries(settings)) {
     const input = ((form.elements as any)[key] || form.elements.namedItem?.(key)) as HTMLInputElement | HTMLSelectElement | null;
     if (!input) {
@@ -125,6 +147,87 @@ async function initOptions() {
   updateProviderSections(settings.provider);
   await refreshLocalCliControls(settings.provider, settings, false);
   updateDataScope(settings);
+  updateAutoTidyControls();
+  setSaveStatus("Saved", false);
+}
+
+function scheduleAutoSave(): void {
+  if (autoSaveTimer !== undefined) {
+    window.clearTimeout(autoSaveTimer);
+  }
+  setSaveStatus("Editing", false);
+  autoSaveTimer = window.setTimeout(() => {
+    autoSaveTimer = undefined;
+    void persistCurrentForm();
+  }, 350);
+}
+
+async function persistCurrentForm(refreshControls = false): Promise<void> {
+  if (autoSaveTimer !== undefined) {
+    window.clearTimeout(autoSaveTimer);
+    autoSaveTimer = undefined;
+  }
+
+  const intent = ++latestSaveIntent;
+  const settings = normalizeSettings(readFormSettings());
+  draftSettings = settings;
+  const previousProvider = currentSettings.provider;
+  setSaveStatus("Saving", false);
+
+  try {
+    const write = saveQueue.then(async () => {
+      if (intent !== latestSaveIntent) {
+        return false;
+      }
+      await saveSettings(settings);
+      currentSettings = settings;
+      if (previousProvider !== settings.provider) {
+        await removeUnusedProviderPermissions(settings.provider);
+      }
+      return true;
+    });
+    saveQueue = write.catch(() => {});
+    const didSave = await write;
+    if (!didSave || intent !== latestSaveIntent) {
+      return;
+    }
+
+    if (refreshControls && providerSelect.value === settings.provider) {
+      await refreshLocalCliControls(settings.provider, settings, false);
+    }
+    if (intent === latestSaveIntent) {
+      updateDataScope();
+      setSaveStatus("Saved", false);
+    }
+  } catch (error) {
+    if (intent === latestSaveIntent) {
+      setSaveStatus(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+}
+
+function getImmediateSaveInputs(): HTMLInputElement[] {
+  return [
+    document.querySelector<HTMLInputElement>("#allowHeuristicFallback")!,
+    document.querySelector<HTMLInputElement>("#ignorePinnedTabs")!,
+    document.querySelector<HTMLInputElement>("#keepExistingGroups")!
+  ];
+}
+
+function getDebouncedSaveInputs(): HTMLInputElement[] {
+  return [
+    document.querySelector<HTMLInputElement>("#openaiApiKey")!,
+    document.querySelector<HTMLInputElement>("#openaiModel")!,
+    document.querySelector<HTMLInputElement>("#anthropicApiKey")!,
+    document.querySelector<HTMLInputElement>("#anthropicModel")!,
+    document.querySelector<HTMLInputElement>("#minimumGroupSize")!,
+    autoTidyIntervalInput,
+    providerTimeoutInput
+  ];
+}
+
+function updateAutoTidyControls(): void {
+  autoTidyIntervalInput.disabled = !autoTidyEnabledInput.checked;
 }
 
 function updateProviderSections(provider: string): void {
@@ -142,11 +245,10 @@ function updateDataScope(settings = readCurrentScopeSettings()): void {
   dataSummary.textContent = scope.dataSummary;
 }
 
-function readFormSettings(): PartialSettings {
+function readFormSettings(provider = activeProvider): PartialSettings {
   const formData = new FormData(form);
-  const provider = String(formData.get("provider") || DEFAULT_SETTINGS.provider) as Provider;
-  const storedLocalCliModel = provider === "local-codex-cli" ? currentSettings.codexCliModel : currentSettings.claudeCliModel;
-  const storedLocalCliReasoningEffort = provider === "local-codex-cli" ? currentSettings.codexReasoningEffort : currentSettings.claudeReasoningEffort;
+  const storedLocalCliModel = provider === "local-codex-cli" ? draftSettings.codexCliModel : draftSettings.claudeCliModel;
+  const storedLocalCliReasoningEffort = provider === "local-codex-cli" ? draftSettings.codexReasoningEffort : draftSettings.claudeReasoningEffort;
   const localCliModel = modelSelect.disabled ? storedLocalCliModel : String(modelSelect.value || "").trim();
   const localCliReasoningEffort = reasoningSelect.disabled ? storedLocalCliReasoningEffort : String(reasoningSelect.value || "").trim();
   return {
@@ -155,28 +257,30 @@ function readFormSettings(): PartialSettings {
     openaiModel: String(formData.get("openaiModel") || DEFAULT_SETTINGS.openaiModel).trim(),
     anthropicApiKey: String(formData.get("anthropicApiKey") || ""),
     anthropicModel: String(formData.get("anthropicModel") || DEFAULT_SETTINGS.anthropicModel).trim(),
-    codexCliModel: provider === "local-codex-cli" ? localCliModel : currentSettings.codexCliModel,
-    claudeCliModel: provider === "local-claude-cli" ? localCliModel : currentSettings.claudeCliModel,
-    codexReasoningEffort: provider === "local-codex-cli" ? localCliReasoningEffort : currentSettings.codexReasoningEffort,
-    claudeReasoningEffort: provider === "local-claude-cli" ? localCliReasoningEffort : currentSettings.claudeReasoningEffort,
+    codexCliModel: provider === "local-codex-cli" ? localCliModel : draftSettings.codexCliModel,
+    claudeCliModel: provider === "local-claude-cli" ? localCliModel : draftSettings.claudeCliModel,
+    codexReasoningEffort: provider === "local-codex-cli" ? localCliReasoningEffort : draftSettings.codexReasoningEffort,
+    claudeReasoningEffort: provider === "local-claude-cli" ? localCliReasoningEffort : draftSettings.claudeReasoningEffort,
     includeFullUrls: formData.get("includeFullUrls") === "on",
     includePageHints: includePageHintsInput ? formData.get("includePageHints") === "on" : false,
     allowHeuristicFallback: formData.get("allowHeuristicFallback") === "on",
     ignorePinnedTabs: formData.get("ignorePinnedTabs") === "on",
     keepExistingGroups: formData.get("keepExistingGroups") === "on",
-    collapseGroups: formData.get("collapseGroups") === "on",
-    minimumGroupSize: Number(formData.get("minimumGroupSize"))
+    minimumGroupSize: Number(formData.get("minimumGroupSize")),
+    autoTidyEnabled: autoTidyEnabledInput.checked,
+    autoTidyIntervalMinutes: Number(autoTidyIntervalInput.value),
+    providerRequestTimeoutSeconds: Number(providerTimeoutInput.value)
   };
 }
 
-async function refreshLocalCliControls(provider: string, settings: Settings, allowPermissionRequest = false): Promise<void> {
+async function refreshLocalCliControls(provider: string, settings: Settings, allowPermissionRequest = false): Promise<boolean> {
   const sequence = ++localCliControlSequence;
   if (!isLocalCliProvider(provider)) {
     codexModels = [];
     replaceModelOptions("Use CLI default", [], "");
     replaceReasoningOptions("", [], "");
     setLocalCliControlsDisabled(false);
-    return;
+    return true;
   }
 
   if (provider === "local-claude-cli") {
@@ -184,7 +288,7 @@ async function refreshLocalCliControls(provider: string, settings: Settings, all
     replaceModelOptions("Use claude CLI's own default", CLAUDE_MODEL_OPTIONS, settings.claudeCliModel);
     populateReasoningSelect(provider, settings);
     setLocalCliControlsDisabled(false);
-    return;
+    return true;
   }
 
   codexModels = [];
@@ -196,33 +300,35 @@ async function refreshLocalCliControls(provider: string, settings: Settings, all
     try {
       await ensureProviderPermission(provider);
       if (sequence !== localCliControlSequence) {
-        return;
+        return false;
       }
     } catch {
       if (sequence === localCliControlSequence) {
         commitCodexControls([], settings, "Grant native messaging access to load Codex models.", false);
       }
-      return;
+      return false;
     }
   } else if (!(await hasNativeMessagingPermission())) {
     if (sequence !== localCliControlSequence) {
-      return;
+      return false;
     }
-    commitCodexControls([], settings, "Select this provider again or Save to load Codex models.", false);
-    return;
+    commitCodexControls([], settings, "Test the bridge to grant access and load Codex models.", false);
+    return false;
   }
 
   try {
     const models = await listNativeModels("codex");
     if (sequence !== localCliControlSequence) {
-      return;
+      return false;
     }
     commitCodexControls(models, settings, "", false);
+    return true;
   } catch (error) {
     if (sequence !== localCliControlSequence) {
-      return;
+      return false;
     }
     commitCodexControls([], settings, getFriendlyProviderErrorMessage(error), true);
+    return false;
   }
 }
 
@@ -252,6 +358,10 @@ function replaceModelOptions(defaultLabel: string, models: NativeModelInfo[], se
   }
 
   const allowedValues = new Set(models.map((model) => model.slug));
+  if (selectedValue && !allowedValues.has(selectedValue)) {
+    modelSelect.appendChild(createOption(selectedValue, `${selectedValue} (saved)`));
+    allowedValues.add(selectedValue);
+  }
   modelSelect.value = selectedValue && allowedValues.has(selectedValue) ? selectedValue : "";
 }
 
@@ -351,6 +461,12 @@ async function testNativeBridge() {
     await ensureProviderPermission(provider);
     const status = await checkNativeCliStatus(provider);
     if (status.configured && status.executableAvailable && status.authenticated) {
+      if (provider === "local-codex-cli") {
+        const modelsLoaded = await refreshLocalCliControls(provider, draftSettings, false);
+        if (!modelsLoaded) {
+          return;
+        }
+      }
       setNativeBridgeStatus(`${getLocalCliLabel(provider)} bridge is ready.`, false);
       return;
     }

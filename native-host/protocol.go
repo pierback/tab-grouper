@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	ProtocolVersion       = 2
+	ProtocolVersion       = 3
 	RequestPlanType       = "TAB_GROUP_PLAN_REQUEST"
 	RequestStatusType     = "NATIVE_HOST_STATUS_REQUEST"
 	RequestListModelsType = "NATIVE_HOST_LIST_MODELS_REQUEST"
@@ -20,6 +20,7 @@ const (
 	MaxTabs               = 1000
 	MaxExistingGroups     = 100
 	MaxGroupTabIDs        = 300
+	MaxRequestTimeoutMS   = 300000
 )
 
 type Tab struct {
@@ -194,7 +195,7 @@ func ValidateRequest(request Request) error {
 	if request.MinimumGroupSize < 2 || request.MinimumGroupSize > 10 {
 		return errors.New("invalid minimum group size")
 	}
-	if request.TimeoutMS < 1000 || request.TimeoutMS > 30000 {
+	if request.TimeoutMS < 1000 || request.TimeoutMS > MaxRequestTimeoutMS {
 		return errors.New("invalid timeout")
 	}
 	if len(request.Tabs) == 0 || len(request.Tabs) > MaxTabs {

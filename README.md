@@ -15,8 +15,8 @@ The extension is written in TypeScript and needs a one-time build before loading
 3. Open `chrome://extensions`.
 4. Enable **Developer mode**.
 5. Click **Load unpacked**.
-6. Select this folder: `/Users/fabianpieringer/projects/tab-grouper`.
-7. Open the extension options and choose a provider.
+6. Select the cloned `tab-grouper` repository folder.
+7. Open the extension options and choose a provider. Changes save automatically.
 
 The default provider is `Local heuristic`, so the extension works without an API key.
 
@@ -54,14 +54,17 @@ After choosing `Local Codex CLI` or `Local Claude Code CLI` in Options, use **Te
 
 ## V1 behavior
 
-- Tidies only the current Chrome window.
+- Tidies the current Chrome window on demand, with optional interval-based auto tidy across all normal Chrome windows.
 - Uses native Chrome tab groups instead of a custom workspace UI.
-- Leaves pinned tabs and existing tab groups untouched by default.
+- Leaves pinned tabs and existing tab-group membership untouched by default.
 - Offers an optional plan preview without changing tabs.
+- Collapses every tab group in the current window after tidying.
+- Shows the selected model and reasoning level in the popup.
+- Shows wall-clock/provider duration, input/output tokens, and reported or API-equivalent estimated cost after each run.
 - Stores an undo snapshot for the last successful tidy.
 - Supports local Codex CLI and local Claude Code CLI provider modes through a Native Messaging bridge.
 - Falls back to local heuristic grouping when a smart provider or local bridge fails.
-- Times out smart providers and falls back locally instead of leaving tidy stuck.
+- Uses a configurable smart-provider timeout (180 seconds by default, 180–300 seconds) and falls back locally instead of leaving tidy stuck.
 - Requests OpenAI or Anthropic host access only if that provider is selected.
 - Requests Native Messaging permission only if a local CLI provider is selected.
 - Supports optional superficial page hints through explicit runtime page-access consent for current-window origins.
@@ -76,7 +79,7 @@ After choosing `Local Codex CLI` or `Local Claude Code CLI` in Options, use **Te
 - `OpenAI`: calls `https://api.openai.com/v1/responses` with structured JSON output.
 - `Anthropic`: calls `https://api.anthropic.com/v1/messages` and parses JSON text output.
 
-Smart provider calls are bounded to keep the popup workflow responsive. If a provider times out, rejects the request, lacks permission, or is missing configuration, the extension uses local heuristic grouping for that tidy.
+Smart provider calls are bounded to keep the popup workflow responsive. If a provider times out, rejects the request, lacks permission, or is missing configuration, the extension uses local heuristic grouping for that tidy. Cost shown for a local subscription CLI is an API-equivalent estimate based on reported token usage, not necessarily a billed charge.
 
 ## Privacy
 

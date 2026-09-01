@@ -30,7 +30,8 @@ const readyPlan = {
     durationMs: 123,
     inputTokens: 10,
     outputTokens: 5,
-    costUsd: 0.0012
+    costUsd: 0.0012,
+    costBasis: "api-estimate" as const
   }
 };
 
@@ -73,6 +74,7 @@ assert.deepEqual(createPlanResponse(readyPlan, { preview: true }), {
   inputTokens: 10,
   outputTokens: 5,
   costUsd: 0.0012,
+  costBasis: "api-estimate",
   undoAvailable: false,
   message: "Would create 2 groups. Skipped 2 already grouped, 1 pinned.",
   preview: true

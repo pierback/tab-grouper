@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { estimateProviderUsageCost } from "../src/lib/cost_estimate.js";
 import { createGroupPlanWithFallback } from "../src/lib/providers.js";
 import type { ProviderError, TabGroupPlan } from "../src/lib/types.js";
 
@@ -26,6 +27,10 @@ const tabs = [
   { id: 3, title: "OpenAI Docs", domain: "developers.openai.com" },
   { id: 4, title: "Chrome Extensions", domain: "developer.chrome.com" }
 ];
+
+assert.equal(estimateProviderUsageCost({ provider: "openai", openaiModel: "gpt-5.4-mini" }, null, null), undefined);
+assert.equal(estimateProviderUsageCost({ provider: "openai", openaiModel: "gpt-5.4-mini" }, "100", "25"), undefined);
+assert.equal(estimateProviderUsageCost({ provider: "openai", openaiModel: "gpt-5.4-mini" }, 100, 25), 0.0001875);
 
 const heuristic = await createGroupPlanWithFallback(tabs, {
   provider: "heuristic",
@@ -149,17 +154,21 @@ globalThis.fetch = (async (_url: RequestInfo | URL, options?: RequestInit): Prom
   });
 }) as typeof fetch;
 
+const originalSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = ((callback: TimerHandler) => originalSetTimeout(callback, 0)) as typeof globalThis.setTimeout;
+
 const timedOut = await createGroupPlanWithFallback(
   tabs,
   {
     provider: "openai",
     openaiApiKey: "sk-test",
     openaiModel: "gpt-test",
-    providerRequestTimeoutMs: 1,
+    providerRequestTimeoutSeconds: 10,
     minimumGroupSize: 2
   },
   tabs
 );
+globalThis.setTimeout = originalSetTimeout;
 
 assert.equal(timedOut.provider, "heuristic");
 assert.equal(timedOut.requestedProvider, "openai");
@@ -193,7 +202,7 @@ const assignedPlan = await createGroupPlanWithFallback(
   {
     provider: "openai",
     openaiApiKey: "sk-test",
-    openaiModel: "gpt-test",
+    openaiModel: "gpt-5.4-mini",
     minimumGroupSize: 2
   },
   tabs,
@@ -205,6 +214,8 @@ assert.deepEqual(assignedPlan.plan.assignments, [{ groupId: 7, tabIds: [1, 2] }]
 assert.equal(typeof assignedPlan.durationMs, "number");
 assert.equal(assignedPlan.inputTokens, 123);
 assert.equal(assignedPlan.outputTokens, 45);
+assert.equal(assignedPlan.costUsd, 0.00029475);
+assert.equal(assignedPlan.costBasis, "api-estimate");
 assert.equal(openAIRequestBody!.max_output_tokens, 6000);
 const systemPrompt = openAIRequestBody!.input[0]!.content[0]!.text;
 const userPrompt = openAIRequestBody!.input[1]!.content[0]!.text;
@@ -248,7 +259,7 @@ const anthropicPlan = await createGroupPlanWithFallback(
   {
     provider: "anthropic",
     anthropicApiKey: "sk-ant-test",
-    anthropicModel: "claude-test",
+    anthropicModel: "claude-sonnet-4-6-20260217",
     minimumGroupSize: 2
   },
   tabs,
@@ -260,6 +271,8 @@ assert.deepEqual(anthropicPlan.plan.assignments, [{ groupId: 7, tabIds: [1, 2] }
 assert.equal(typeof anthropicPlan.durationMs, "number");
 assert.equal(anthropicPlan.inputTokens, 234);
 assert.equal(anthropicPlan.outputTokens, 56);
+assert.equal(anthropicPlan.costUsd, 0.001542);
+assert.equal(anthropicPlan.costBasis, "api-estimate");
 assert.equal(anthropicRequestBody!.max_tokens, 6000);
 
 globalThis.chrome = originalChrome;

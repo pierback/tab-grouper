@@ -42,10 +42,12 @@ interface CachedPlan {
 
 type StoredSnapshotsByWindow = Record<string, TidySnapshot>;
 
+const AUTO_TIDY_ALARM_NAME = "tab-grouper:auto-tidy";
 const activeMutationsByWindow = new Set<number>();
 const planCache = new Map<number, PlanCacheEntry<CachedPlan>>();
 const hintCache = new Map<number, import("./lib/hint_cache.js").HintCacheEntry>();
 let snapshotMutationQueue: Promise<unknown> = Promise.resolve();
+let autoTidyInProgress = false;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "TIDY_CURRENT_WINDOW") {
@@ -109,6 +111,83 @@ chrome.windows?.onRemoved?.addListener((windowId) => {
   invalidatePlanCache(planCache, windowId);
 });
 
+chrome.runtime.onInstalled?.addListener(() => {
+  void syncAutoTidyAlarm().catch(() => {});
+});
+
+chrome.runtime.onStartup?.addListener(() => {
+  void syncAutoTidyAlarm().catch(() => {});
+});
+
+chrome.storage.onChanged?.addListener((changes, areaName) => {
+  if (areaName !== "local" || (!changes.autoTidyEnabled && !changes.autoTidyIntervalMinutes)) {
+    return;
+  }
+  void syncAutoTidyAlarm().catch(() => {});
+});
+
+chrome.alarms?.onAlarm.addListener((alarm) => {
+  if (alarm.name !== AUTO_TIDY_ALARM_NAME) {
+    return;
+  }
+  void autoTidyNormalWindowsIfIdle().catch(() => {});
+});
+
+async function syncAutoTidyAlarm(): Promise<void> {
+  if (!chrome.alarms) {
+    return;
+  }
+  const settings = await getSettings();
+  if (!settings.autoTidyEnabled) {
+    await chrome.alarms.clear(AUTO_TIDY_ALARM_NAME);
+    return;
+  }
+
+  const intervalMinutes = settings.autoTidyIntervalMinutes;
+  const currentAlarm = await chrome.alarms.get(AUTO_TIDY_ALARM_NAME);
+  if (currentAlarm?.periodInMinutes === intervalMinutes) {
+    return;
+  }
+
+  await chrome.alarms.clear(AUTO_TIDY_ALARM_NAME);
+  await chrome.alarms.create(AUTO_TIDY_ALARM_NAME, {
+    delayInMinutes: intervalMinutes,
+    periodInMinutes: intervalMinutes
+  });
+}
+
+async function autoTidyNormalWindows(): Promise<void> {
+  const settings = await getSettings();
+  if (!settings.autoTidyEnabled) {
+    await chrome.alarms?.clear(AUTO_TIDY_ALARM_NAME);
+    return;
+  }
+
+  const windows = await chrome.windows.getAll({ windowTypes: ["normal"] });
+  for (const window of windows) {
+    if (typeof window.id !== "number" || !Number.isInteger(window.id)) {
+      continue;
+    }
+    try {
+      await withWindowMutationLock(window.id, () => tidyCurrentWindow(window.id as number));
+    } catch {
+      // A failed window must not prevent later windows from being tidied.
+    }
+  }
+}
+
+async function autoTidyNormalWindowsIfIdle(): Promise<void> {
+  if (autoTidyInProgress) {
+    return;
+  }
+  autoTidyInProgress = true;
+  try {
+    await autoTidyNormalWindows();
+  } finally {
+    autoTidyInProgress = false;
+  }
+}
+
 function readMessageWindowId(message: any): number | null {
   return Number.isInteger(message?.windowId) && message.windowId >= 0 ? message.windowId : null;
 }
@@ -144,8 +223,45 @@ async function tidyCurrentWindow(windowId: number, grantedHintOrigins: string[] 
     planResult = await revalidatePlanBeforeApply(planResult, windowId);
   }
   if (!planResult.canApply) {
-    await clearLastTidySnapshot(windowId);
-    return createPlanResponse(planResult, { undoAvailable: false });
+    const preTidyGroups = await chrome.tabGroups.query({ windowId });
+    const expandedGroups = preTidyGroups.filter((group) => !group.collapsed);
+    if (expandedGroups.length === 0) {
+      const existingSnapshot = await getLastTidySnapshot(windowId);
+      return createPlanResponse(planResult, { undoAvailable: Boolean(existingSnapshot) });
+    }
+
+    const collapseSnapshot = createTidySnapshot({
+      windowId,
+      tabs: planResult.tabs,
+      groups: preTidyGroups,
+      changedTabIds: [],
+      appliedGroups: [],
+      appliedAssignments: [],
+      settings: planResult.settings
+    });
+    await saveLastTidySnapshot({ ...collapseSnapshot, state: "applying" });
+
+    try {
+      await collapseGroups(expandedGroups);
+      await saveLastTidySnapshot({ ...collapseSnapshot, state: "applied" });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      invalidatePlanCache(planCache, windowId);
+      await saveLastTidySnapshot({ ...collapseSnapshot, state: "failed", error: detail });
+      return {
+        ok: false,
+        error: "Tidy failed after preparing undo. Undo is available.",
+        detail,
+        undoAvailable: true
+      };
+    }
+
+    invalidatePlanCache(planCache, windowId);
+    const response = createPlanResponse(planResult, { undoAvailable: true });
+    return {
+      ...response,
+      message: `${response.message} Collapsed ${expandedGroups.length} existing group${expandedGroups.length === 1 ? "" : "s"}.`
+    };
   }
 
   const preTidyGroups = await chrome.tabGroups.query({ windowId });
@@ -193,7 +309,7 @@ async function tidyCurrentWindow(windowId: number, grantedHintOrigins: string[] 
         chrome.tabGroups.update(groupId, {
           title: group.name,
           color: group.color,
-          collapsed: Boolean(planResult.settings.collapseGroups)
+          collapsed: true
         })
       );
     }
@@ -216,6 +332,8 @@ async function tidyCurrentWindow(windowId: number, grantedHintOrigins: string[] 
         appliedAssignments
       });
     }
+
+    await collapseAllGroupsInWindow(windowId);
 
     await saveLastTidySnapshot({
       ...baseSnapshot,
@@ -262,9 +380,24 @@ async function tidyCurrentWindow(windowId: number, grantedHintOrigins: string[] 
     inputTokens: planResult.providerResult.inputTokens,
     outputTokens: planResult.providerResult.outputTokens,
     costUsd: planResult.providerResult.costUsd,
+    costBasis: planResult.providerResult.costBasis,
     undoAvailable: true,
     message: buildTidySuccessMessage(appliedGroups, planResult.skipped, planResult.providerResult, appliedAssignments)
   };
+}
+
+async function collapseAllGroupsInWindow(windowId: number): Promise<void> {
+  const groups = await chrome.tabGroups.query({ windowId });
+  await collapseGroups(groups);
+}
+
+async function collapseGroups(groups: chrome.tabGroups.TabGroup[]): Promise<void> {
+  for (const group of groups) {
+    if (group.collapsed) {
+      continue;
+    }
+    await retryChromeTabMutation(() => chrome.tabGroups.update(group.id, { collapsed: true }));
+  }
 }
 
 async function withWindowMutationLock<T>(windowId: number, callback: () => Promise<T>): Promise<T | { ok: false; error: string }> {
@@ -394,7 +527,10 @@ function createPlanCacheKeyInput({
     anthropicApiKey: settings.anthropicApiKey,
     anthropicModel: settings.anthropicModel,
     codexCliModel: settings.codexCliModel,
+    codexReasoningEffort: settings.codexReasoningEffort,
     claudeCliModel: settings.claudeCliModel,
+    claudeReasoningEffort: settings.claudeReasoningEffort,
+    providerRequestTimeoutSeconds: settings.providerRequestTimeoutSeconds,
     groupableTabs: groupableTabs.map((tab) => ({
       id: tab.id,
       title: tab.title,
@@ -552,8 +688,11 @@ async function undoLastTidy(windowId: number) {
     };
   }
 
-  const currentTabs = await chrome.tabs.query({ windowId: snapshot.windowId });
-  const undoPlan = createUndoPlan(snapshot, currentTabs);
+  const [currentTabs, currentGroups] = await Promise.all([
+    chrome.tabs.query({ windowId: snapshot.windowId }),
+    chrome.tabGroups.query({ windowId: snapshot.windowId })
+  ]);
+  const undoPlan = createUndoPlan(snapshot, currentTabs, currentGroups);
   if (!undoPlan.canUndo) {
     await clearLastTidySnapshot(snapshot.windowId);
     invalidatePlanCache(planCache, snapshot.windowId);
@@ -589,6 +728,8 @@ async function undoLastTidy(windowId: number) {
     }
   }
 
+  const restoredGroupCount = await restoreGroupCollapseStates(snapshot.windowId, undoPlan.groupCollapseUpdates);
+
   for (const move of undoPlan.tabMoves) {
     await retryChromeTabMutation(() =>
       chrome.tabs.move(move.tabId, {
@@ -605,8 +746,39 @@ async function undoLastTidy(windowId: number) {
     ok: true,
     undoneCount: undoPlan.tabIdsToUngroup.length,
     undoAvailable: false,
-    message: `Undid ${undoPlan.tabIdsToUngroup.length} tab${undoPlan.tabIdsToUngroup.length === 1 ? "" : "s"}.`
+    message: buildUndoSuccessMessage(undoPlan.tabIdsToUngroup.length, restoredGroupCount)
   };
+}
+
+async function restoreGroupCollapseStates(
+  windowId: number,
+  updates: Array<{ groupId: number; collapsed: boolean }>
+): Promise<number> {
+  const currentGroups = await chrome.tabGroups.query({ windowId });
+  const currentGroupById = new Map(currentGroups.map((group) => [group.id, group]));
+  let restoredCount = 0;
+  for (const update of updates) {
+    const currentGroup = currentGroupById.get(update.groupId);
+    if (!currentGroup || currentGroup.collapsed === update.collapsed) {
+      continue;
+    }
+    await retryChromeTabMutation(() =>
+      chrome.tabGroups.update(update.groupId, { collapsed: update.collapsed })
+    );
+    restoredCount += 1;
+  }
+  return restoredCount;
+}
+
+function buildUndoSuccessMessage(undoneTabCount: number, restoredGroupCount: number): string {
+  const parts: string[] = [];
+  if (undoneTabCount > 0) {
+    parts.push(`Undid ${undoneTabCount} tab${undoneTabCount === 1 ? "" : "s"}.`);
+  }
+  if (restoredGroupCount > 0) {
+    parts.push(`Restored ${restoredGroupCount} group${restoredGroupCount === 1 ? "" : "s"}.`);
+  }
+  return parts.join(" ") || "Nothing to undo.";
 }
 
 async function getStatus(windowId: number) {

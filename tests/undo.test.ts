@@ -17,7 +17,9 @@ const snapshot = createTidySnapshot({
 });
 
 assert.equal(isUsableSnapshot(snapshot), true);
+assert.equal(isUsableSnapshot({ ...snapshot, version: 1 }), false);
 assert.deepEqual(snapshot.changedTabIds, [1, 2]);
+assert.deepEqual(snapshot.groupIdsCollapsedByTidy, []);
 assert.deepEqual(uniqueIntegerIds([1, "2", 2, 3.5, "x"]), [1, 2]);
 
 assert.deepEqual(
@@ -25,11 +27,12 @@ assert.deepEqual(
     { id: 1, groupId: 100 },
     { id: 2, groupId: 100 },
     { id: 3, groupId: 7 }
-  ]),
+  ], [{ id: 7, collapsed: false }]),
   {
     canUndo: true,
     tabIdsToUngroup: [1, 2],
     originalGroups: [],
+    groupCollapseUpdates: [],
     tabMoves: [
       { tabId: 1, index: 0 },
       { tabId: 2, index: 1 }
@@ -41,11 +44,12 @@ assert.deepEqual(
   createUndoPlan(snapshot, [
     { id: 1, groupId: -1 },
     { id: 2, groupId: -1 }
-  ]),
+  ], []),
   {
     canUndo: false,
     tabIdsToUngroup: [],
     originalGroups: [],
+    groupCollapseUpdates: [],
     tabMoves: []
   }
 );
@@ -54,11 +58,12 @@ assert.deepEqual(
   createUndoPlan(snapshot, [
     { id: 1, groupId: 200 },
     { id: 2, groupId: 100 }
-  ]),
+  ], []),
   {
     canUndo: true,
     tabIdsToUngroup: [2],
     originalGroups: [],
+    groupCollapseUpdates: [],
     tabMoves: [
       { tabId: 2, index: 1 }
     ]
@@ -81,13 +86,14 @@ assert.deepEqual(
   createUndoPlan(regroupSnapshot, [
     { id: 1, groupId: 100 },
     { id: 2, groupId: 100 }
-  ]),
+  ], []),
   {
     canUndo: true,
     tabIdsToUngroup: [1, 2],
     originalGroups: [
       { id: 7, title: "Original", color: "purple", collapsed: false, tabIds: [1] }
     ],
+    groupCollapseUpdates: [],
     tabMoves: [
       { tabId: 1, index: 0 },
       { tabId: 2, index: 1 }
@@ -99,11 +105,12 @@ assert.deepEqual(
   createUndoPlan(regroupSnapshot, [
     { id: 1, groupId: 200 },
     { id: 2, groupId: 100 }
-  ]),
+  ], []),
   {
     canUndo: true,
     tabIdsToUngroup: [2],
     originalGroups: [],
+    groupCollapseUpdates: [],
     tabMoves: [
       { tabId: 2, index: 1 }
     ]
@@ -127,21 +134,48 @@ assert.deepEqual(
   createUndoPlan(assignmentSnapshot, [
     { id: 1, groupId: 7 },
     { id: 2, groupId: 200 }
-  ]),
+  ], [{ id: 7, collapsed: true }]),
   {
     canUndo: true,
     tabIdsToUngroup: [1],
     originalGroups: [],
+    groupCollapseUpdates: [{ groupId: 7, collapsed: false }],
     tabMoves: [
       { tabId: 1, index: 0 }
     ]
   }
 );
 
-assert.deepEqual(createUndoPlan(null, []), {
+const collapseOnlySnapshot = createTidySnapshot({
+  windowId: 10,
+  tabs: [{ id: 3, groupId: 7, windowId: 10, index: 0 }],
+  groups: [{ id: 7, title: "Original", color: "blue", collapsed: false, windowId: 10 }],
+  changedTabIds: [],
+  appliedGroups: [],
+  settings: { keepExistingGroups: true }
+});
+assert.deepEqual(collapseOnlySnapshot.groupIdsCollapsedByTidy, [7]);
+
+assert.deepEqual(
+  createUndoPlan(
+    collapseOnlySnapshot,
+    [{ id: 3, groupId: 7 }],
+    [{ id: 7, collapsed: true }]
+  ),
+  {
+    canUndo: true,
+    tabIdsToUngroup: [],
+    originalGroups: [],
+    groupCollapseUpdates: [{ groupId: 7, collapsed: false }],
+    tabMoves: []
+  }
+);
+
+assert.deepEqual(createUndoPlan(null, [], []), {
   canUndo: false,
   tabIdsToUngroup: [],
   originalGroups: [],
+  groupCollapseUpdates: [],
   tabMoves: []
 });
 

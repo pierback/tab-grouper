@@ -174,6 +174,7 @@ async function runSmoke() {
               id: group.id,
               title: group.title,
               color: group.color,
+              collapsed: group.collapsed,
               windowId: group.windowId
             }))
           };
@@ -192,6 +193,7 @@ async function runSmoke() {
       const createdGroup = tidyResult.groups.find((group) => group.id === fixtureTabs[0].groupId);
       assert(createdGroup, "Created tab group was not visible through chrome.tabGroups.");
       assert.equal(createdGroup.title, `Local ${server.address().port}`);
+      assert.equal(createdGroup.collapsed, true);
 
       const undoResult = await evaluate(popup, `
         (async () => {
@@ -300,8 +302,9 @@ async function runSmoke() {
             includePageHints: true,
             ignorePinnedTabs: true,
             keepExistingGroups: true,
-            collapseGroups: false,
-            providerRequestTimeoutMs: 15000
+            codexCliModel: "gpt-5.4-mini",
+            codexReasoningEffort: "high",
+            providerRequestTimeoutSeconds: 180
           });
           const currentWindow = await call(chrome.windows, "getCurrent");
           for (const url of ${JSON.stringify(nativeFixtureUrls)}) {
@@ -367,7 +370,8 @@ async function runSmoke() {
             groups: groups.map((group) => ({
               id: group.id,
               title: group.title,
-              color: group.color
+              color: group.color,
+              collapsed: group.collapsed
             }))
           };
         })()
@@ -376,6 +380,8 @@ async function runSmoke() {
       assert.equal(nativeTidyResult.undoHidden, false);
       assert.match(nativeTidyResult.tidyText, /Created 1 group/);
       assert.doesNotMatch(nativeTidyResult.tidyText, /fallback/i);
+      assert.match(nativeTidyResult.tidyText, /120/);
+      assert.match(nativeTidyResult.tidyText, /API equivalent/);
 
       const nativeFixtureTabs = nativeTidyResult.tabs.filter((tab) => nativeFixtureUrls.includes(tab.url));
       assert.equal(nativeFixtureTabs.length, 2, "Expected both native fixture tabs to be present.");
@@ -386,6 +392,7 @@ async function runSmoke() {
       assert(nativeGroup, "Native provider group was not visible through chrome.tabGroups.");
       assert.equal(nativeGroup.title, "Native Codex");
       assert.equal(nativeGroup.color, "purple");
+      assert.equal(nativeGroup.collapsed, true);
 
       const nativeUndoResult = await evaluate(popup, `
         (async () => {
@@ -652,6 +659,10 @@ fs.writeFileSync(args[outputIndex + 1], JSON.stringify({
     { name: "Native Codex", color: "purple", tabIds: tabIds.slice(0, 2) }
   ]
 }));
+process.stdout.write(JSON.stringify({
+  type: "turn.completed",
+  usage: { input_tokens: 100, output_tokens: 20 }
+}) + "\\n");
 `;
 }
 

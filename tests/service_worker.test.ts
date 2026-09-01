@@ -82,6 +82,9 @@ interface FakeChromeState {
   scriptExecutions: ScriptExecution[];
   permissionRemovals: chrome.permissions.Permissions[];
   tabMoves: Array<{ tabId: number; windowId?: number; index?: number }>;
+  alarms: Map<string, chrome.alarms.Alarm>;
+  alarmCreates: Array<{ name: string; alarmInfo: chrome.alarms.AlarmCreateInfo }>;
+  alarmClears: string[];
 }
 
 interface CreateFakeChromeConfig {
@@ -98,12 +101,18 @@ interface CreateFakeChromeConfig {
 interface FakeChrome {
   __state: FakeChromeState;
   __listener: ((message: RuntimeMessage, sender: Record<string, never>, sendResponse: (response: TestResponse) => void) => boolean | undefined) | null;
+  __installedListener: (() => void) | null;
+  __startupListener: (() => void) | null;
+  __storageChangeListener: ((changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void) | null;
+  __alarmListener: ((alarm: chrome.alarms.Alarm) => void) | null;
   runtime: unknown;
   permissions: unknown;
   storage: unknown;
   tabs: unknown;
   tabGroups: unknown;
   scripting: unknown;
+  windows: unknown;
+  alarms: unknown;
 }
 
 const originalLanguageModel = (globalThis as typeof globalThis & TestGlobal).LanguageModel;
@@ -149,16 +158,33 @@ function createFakeChrome({
     queryCount: 0,
     scriptExecutions: [],
     permissionRemovals: [],
-    tabMoves: []
+    tabMoves: [],
+    alarms: new Map(),
+    alarmCreates: [],
+    alarmClears: []
   } as FakeChromeState;
 
   const chrome = {
     __state: state,
     __listener: null,
+    __installedListener: null,
+    __startupListener: null,
+    __storageChangeListener: null,
+    __alarmListener: null,
     runtime: {
       onMessage: {
         addListener(listener: NonNullable<FakeChrome["__listener"]>) {
           chrome.__listener = listener;
+        }
+      },
+      onInstalled: {
+        addListener(listener: () => void) {
+          chrome.__installedListener = listener;
+        }
+      },
+      onStartup: {
+        addListener(listener: () => void) {
+          chrome.__startupListener = listener;
         }
       }
     },
@@ -190,6 +216,11 @@ function createFakeChrome({
         },
         async remove(key: string) {
           delete state.storage[key];
+        }
+      },
+      onChanged: {
+        addListener(listener: NonNullable<FakeChrome["__storageChangeListener"]>) {
+          chrome.__storageChangeListener = listener;
         }
       }
     },
@@ -275,6 +306,37 @@ function createFakeChrome({
         state.scriptExecutions.push(request);
         return [{ result: scriptingResult }];
       }
+    },
+    windows: {
+      onRemoved: {
+        addListener() {}
+      },
+      async getAll() {
+        return Array.from(new Set(state.tabs.map((tab) => tab.windowId))).map((id) => ({ id, type: "normal" }));
+      }
+    },
+    alarms: {
+      onAlarm: {
+        addListener(listener: NonNullable<FakeChrome["__alarmListener"]>) {
+          chrome.__alarmListener = listener;
+        }
+      },
+      async get(name: string) {
+        return state.alarms.get(name);
+      },
+      async clear(name: string) {
+        state.alarmClears.push(name);
+        return state.alarms.delete(name);
+      },
+      async create(name: string, alarmInfo: chrome.alarms.AlarmCreateInfo) {
+        state.alarmCreates.push({ name, alarmInfo });
+        state.alarms.set(name, {
+          name,
+          scheduledTime: Date.now(),
+          periodInMinutes: alarmInfo.periodInMinutes,
+          persistAcrossSessions: true
+        });
+      }
     }
   } as unknown as FakeChrome;
 
@@ -321,6 +383,16 @@ function delay(ms: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function waitForState(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+    await delay(0);
+  }
+  assert.fail("Timed out waiting for service worker state.");
 }
 
 function getStoredSnapshot(chrome: FakeChrome, windowId: number): TestSnapshot | undefined {
@@ -398,7 +470,14 @@ function latestScriptExecution(chrome: FakeChrome): ScriptExecution {
   assert.equal(typeof tidy.durationMs, "number");
   assert.equal(stateTab(chrome, 0).groupId, stateTab(chrome, 1).groupId);
   assert.notEqual(stateTab(chrome, 0).groupId, -1);
+  assert.equal(chrome.__state.groups.get(stateTab(chrome, 0).groupId)?.collapsed, true);
   assert.equal(requireStoredSnapshot(chrome, 1).changedTabIds.length, 2);
+
+  const snapshotBeforeNoOp = requireStoredSnapshot(chrome, 1);
+  const noOpTidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 1 });
+  assert.equal(noOpTidy.ok, true);
+  assert.equal(noOpTidy.undoAvailable, true);
+  assert.deepEqual(requireStoredSnapshot(chrome, 1), snapshotBeforeNoOp);
 
   const invalidUndo = await sendRuntimeMessage(chrome, { type: "UNDO_LAST_TIDY" });
   assert.equal(invalidUndo.ok, false);
@@ -424,6 +503,58 @@ function latestScriptExecution(chrome: FakeChrome): ScriptExecution {
   assert.equal(undo.undoAvailable, false);
   assert.equal(chrome.__state.tabs.every((tab) => tab.groupId === -1), true);
   assert.equal(getStoredSnapshot(chrome, 1), undefined);
+}
+
+{
+  const chrome = createFakeChrome({
+    tabs: [
+      { id: 1, title: "Existing One", url: "https://example.com/one", windowId: 16, index: 0, groupId: 7 },
+      { id: 2, title: "Existing Two", url: "https://example.com/two", windowId: 16, index: 1, groupId: 7 }
+    ],
+    groups: [{ id: 7, title: "Existing", color: "grey", collapsed: false, windowId: 16 }]
+  });
+  await importServiceWorker(chrome);
+
+  const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 16 });
+  assert.equal(tidy.ok, true);
+  assert.equal(tidy.groupedCount, 0);
+  assert.equal(tidy.undoAvailable, true);
+  assert.deepEqual(requireStoredSnapshot(chrome, 16).changedTabIds, []);
+  assert.equal(chrome.__state.groups.get(7)?.collapsed, true);
+
+  const undo = await sendRuntimeMessage(chrome, { type: "UNDO_LAST_TIDY", windowId: 16 });
+  assert.equal(undo.ok, true);
+  assert.equal(undo.undoneCount, 0);
+  assert.match(undo.message, /Restored 1 group/);
+  assert.equal(chrome.__state.groups.get(7)?.collapsed, false);
+  assert.equal(getStoredSnapshot(chrome, 16), undefined);
+}
+
+{
+  const chrome = createFakeChrome({
+    tabs: [
+      { id: 1, title: "Codex Issue", url: "https://github.com/openai/codex/issues/1", windowId: 17, index: 0 },
+      { id: 2, title: "Codex PR", url: "https://github.com/openai/codex/pull/2", windowId: 17, index: 1 },
+      { id: 3, title: "Existing One", url: "https://example.com/one", windowId: 17, index: 2, groupId: 7 },
+      { id: 4, title: "Existing Two", url: "https://example.com/two", windowId: 17, index: 3, groupId: 7 }
+    ],
+    groups: [{ id: 7, title: "Existing", color: "grey", collapsed: false, windowId: 17 }]
+  });
+  await importServiceWorker(chrome);
+
+  const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 17 });
+  assert.equal(tidy.ok, true);
+  assert.equal(tidy.groupedCount, 2);
+  assert.equal(chrome.__state.groups.get(7)?.collapsed, true);
+
+  chrome.__state.tabs = chrome.__state.tabs.filter((tab) => ![1, 2].includes(tab.id));
+
+  const undo = await sendRuntimeMessage(chrome, { type: "UNDO_LAST_TIDY", windowId: 17 });
+  assert.equal(undo.ok, true);
+  assert.equal(undo.undoneCount, 0);
+  assert.match(undo.message, /Restored 1 group/);
+  assert.equal(chrome.__state.groups.get(7)?.collapsed, false);
+  assert.equal(getStoredSnapshot(chrome, 17), undefined);
 }
 
 {
@@ -746,12 +877,14 @@ function latestScriptExecution(chrome: FakeChrome): ScriptExecution {
   assert.match(tidy.message, /Added 1 tab to existing groups/);
   assert.match(promptText, /"existingGroups"/);
   assert.equal(findStateTab(chrome, 2).groupId, 7);
+  assert.equal(chrome.__state.groups.get(7)?.collapsed, true);
   assert.deepEqual(requireStoredSnapshot(chrome, 8).changedTabIds, [2]);
 
   const undo = await sendRuntimeMessage(chrome, { type: "UNDO_LAST_TIDY", windowId: 8 });
   assert.equal(undo.ok, true);
   assert.equal(findStateTab(chrome, 1).groupId, 7);
   assert.equal(findStateTab(chrome, 2).groupId, -1);
+  assert.equal(chrome.__state.groups.get(7)?.collapsed, false);
   (globalThis as typeof globalThis & TestGlobal).LanguageModel = originalLanguageModel;
 }
 
@@ -881,7 +1014,9 @@ function latestScriptExecution(chrome: FakeChrome): ScriptExecution {
     storage: {
       provider: "chrome-ai",
       codexCliModel: "codex-a",
-      claudeCliModel: "claude-a"
+      codexReasoningEffort: "medium",
+      claudeCliModel: "claude-a",
+      providerRequestTimeoutSeconds: 120
     }
   });
   await importServiceWorker(chrome);
@@ -896,7 +1031,15 @@ function latestScriptExecution(chrome: FakeChrome): ScriptExecution {
   chrome.__state.storage.claudeCliModel = "claude-b";
   const claudeChangedPreview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 15 });
   assert.equal(claudeChangedPreview.ok, true);
-  assert.equal(promptCount, 3);
+
+  chrome.__state.storage.codexReasoningEffort = "high";
+  const reasoningChangedPreview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 15 });
+  assert.equal(reasoningChangedPreview.ok, true);
+
+  chrome.__state.storage.providerRequestTimeoutSeconds = 240;
+  const timeoutChangedPreview = await sendRuntimeMessage(chrome, { type: "PREVIEW_CURRENT_WINDOW", windowId: 15 });
+  assert.equal(timeoutChangedPreview.ok, true);
+  assert.equal(promptCount, 5);
   (globalThis as typeof globalThis & TestGlobal).LanguageModel = originalLanguageModel;
 }
 
@@ -976,6 +1119,84 @@ function latestScriptExecution(chrome: FakeChrome): ScriptExecution {
   assert.equal(right.ok, true);
   assert.ok(getStoredSnapshot(chrome, 11));
   assert.ok(getStoredSnapshot(chrome, 12));
+}
+
+{
+  const chrome = createFakeChrome({
+    tabs: [
+      { id: 1, title: "Window 21 Issue", url: "https://github.com/openai/codex/issues/1", windowId: 21, index: 0 },
+      { id: 2, title: "Window 21 PR", url: "https://github.com/openai/codex/pull/2", windowId: 21, index: 1 },
+      { id: 3, title: "Window 22 Issue", url: "https://github.com/openai/codex/issues/3", windowId: 22, index: 0 },
+      { id: 4, title: "Window 22 PR", url: "https://github.com/openai/codex/pull/4", windowId: 22, index: 1 }
+    ],
+    storage: {
+      autoTidyEnabled: true,
+      autoTidyIntervalMinutes: 15
+    }
+  });
+  await importServiceWorker(chrome);
+
+  assert.ok(chrome.__installedListener);
+  chrome.__installedListener();
+  await waitForState(() => chrome.__state.alarmCreates.length === 1);
+  assert.deepEqual(chrome.__state.alarmCreates[0], {
+    name: "tab-grouper:auto-tidy",
+    alarmInfo: { delayInMinutes: 15, periodInMinutes: 15 }
+  });
+
+  assert.ok(chrome.__alarmListener);
+  chrome.__alarmListener({
+    name: "tab-grouper:auto-tidy",
+    scheduledTime: Date.now(),
+    periodInMinutes: 15,
+    persistAcrossSessions: true
+  });
+  await waitForState(() => Boolean(getStoredSnapshot(chrome, 21) && getStoredSnapshot(chrome, 22)));
+  assert.notEqual(findStateTab(chrome, 1).groupId, -1);
+  assert.notEqual(findStateTab(chrome, 3).groupId, -1);
+  assert.equal(Array.from(chrome.__state.groups.values()).every((group) => group.collapsed), true);
+
+  chrome.__state.storage.autoTidyIntervalMinutes = 45;
+  assert.ok(chrome.__storageChangeListener);
+  chrome.__storageChangeListener({ autoTidyIntervalMinutes: { oldValue: 15, newValue: 45 } }, "local");
+  await waitForState(() => chrome.__state.alarmCreates.length === 2);
+  assert.equal(chrome.__state.alarms.get("tab-grouper:auto-tidy")?.periodInMinutes, 45);
+
+  chrome.__state.storage.autoTidyEnabled = false;
+  chrome.__storageChangeListener({ autoTidyEnabled: { oldValue: true, newValue: false } }, "local");
+  await waitForState(() => !chrome.__state.alarms.has("tab-grouper:auto-tidy"));
+  assert.ok(chrome.__state.alarmClears.includes("tab-grouper:auto-tidy"));
+}
+
+{
+  const chrome = createFakeChrome({
+    tabs: [
+      { id: 201, title: "Window 41 Issue", url: "https://github.com/org/repo/issues/1", windowId: 41, index: 0 },
+      { id: 202, title: "Window 41 PR", url: "https://github.com/org/repo/pull/2", windowId: 41, index: 1 },
+      { id: 203, title: "Window 42 Issue", url: "https://github.com/org/repo/issues/3", windowId: 42, index: 0 },
+      { id: 204, title: "Window 42 PR", url: "https://github.com/org/repo/pull/4", windowId: 42, index: 1 }
+    ],
+    storage: { autoTidyEnabled: true, autoTidyIntervalMinutes: 1 },
+    groupDelayMs: 25
+  });
+  await importServiceWorker(chrome);
+
+  assert.ok(chrome.__alarmListener);
+  const alarm = {
+    name: "tab-grouper:auto-tidy",
+    scheduledTime: Date.now(),
+    periodInMinutes: 1,
+    persistAcrossSessions: true
+  };
+  chrome.__alarmListener(alarm);
+  await waitForState(() => getStoredSnapshot(chrome, 41)?.state === "applying");
+
+  chrome.__alarmListener(alarm);
+  await delay(10);
+  assert.equal(getStoredSnapshot(chrome, 42), undefined);
+
+  await waitForState(() => getStoredSnapshot(chrome, 41)?.state === "applied");
+  await waitForState(() => getStoredSnapshot(chrome, 42)?.state === "applied");
 }
 
 (globalThis as typeof globalThis & TestGlobal).LanguageModel = originalLanguageModel;

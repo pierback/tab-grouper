@@ -140,7 +140,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 2,
+        version: 3,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -160,21 +160,21 @@ const tabs = [
       minimumGroupSize: 2,
       includeFullUrls: false,
       includePageHints: false,
-      providerRequestTimeoutMs: 4000
+      providerRequestTimeoutSeconds: 120
     }, "codex");
 
     assert.deepEqual(plan.groups, [{ name: "Codex GitHub", color: "blue", tabIds: [1, 2] }]);
     assert.deepEqual(plan.timing, { durationMs: 321, inputTokens: 10, outputTokens: 5, costUsd: 0.0123 });
     assert.deepEqual(chrome.__state.hostNames, [NATIVE_HOST_NAME]);
-    assert.equal(chrome.__state.sentMessages[0]!.version, 2);
+    assert.equal(chrome.__state.sentMessages[0]!.version, 3);
     assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
     assert.equal(Object.hasOwn(chrome.__state.sentMessages[0]!, "model"), false);
     assert.equal(Object.hasOwn(chrome.__state.sentMessages[0]!, "reasoningEffort"), false);
-    assert.equal(chrome.__state.sentMessages[0]!.timeoutMs, 4000);
+    assert.equal(chrome.__state.sentMessages[0]!.timeoutMs, 180000);
     assert.equal(chrome.__state.sentMessages[0]!.tabs[0]!.url, undefined);
     assert.equal(chrome.__state.sentMessages[0]!.tabs[0]!.pageHint, undefined);
     assert.equal(chrome.__state.sentMessages[0]!.tabs[0]!.context, undefined);
-    assert.ok(timeoutDelays.includes(6500));
+    assert.ok(timeoutDelays.includes(185000));
   } finally {
     globalThis.setTimeout = originalSetTimeout;
   }
@@ -184,7 +184,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 2,
+        version: 3,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -211,7 +211,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 2,
+        version: 3,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -240,7 +240,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 2,
+        version: 3,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -269,7 +269,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 2,
+        version: 3,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -303,7 +303,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 2,
+        version: 3,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -325,7 +325,7 @@ const tabs = [
   assert.equal(status.configured, true);
   assert.equal(status.executableAvailable, true);
   assert.equal(chrome.__state.sentMessages[0]!.type, "NATIVE_HOST_STATUS_REQUEST");
-  assert.equal(chrome.__state.sentMessages[0]!.version, 2);
+    assert.equal(chrome.__state.sentMessages[0]!.version, 3);
   assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
 }
 
@@ -333,7 +333,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 2,
+        version: 3,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -353,7 +353,7 @@ const tabs = [
     { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini", supportedReasoningLevels: ["low", "medium", "high", "xhigh"], defaultReasoningLevel: "medium" }
   ]);
   assert.equal(chrome.__state.sentMessages[0]!.type, "NATIVE_HOST_LIST_MODELS_REQUEST");
-  assert.equal(chrome.__state.sentMessages[0]!.version, 2);
+    assert.equal(chrome.__state.sentMessages[0]!.version, 3);
   assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
 }
 
@@ -361,7 +361,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 1,
+        version: 2,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: false,
