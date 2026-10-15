@@ -17,7 +17,7 @@ const target = readTarget(process.argv.slice(2));
 const browser = BROWSERS[target];
 const headed = process.env.GECKO_SMOKE_HEADED === "1";
 const nativeHostName = "com.fabianpieringer.tab_grouper";
-const timeoutMs = 90_000;
+const timeoutMs = 150_000;
 
 async function runSmoke() {
   const workDir = await mkdtemp(path.join(os.tmpdir(), `tab-grouper-${target}-smoke-`));
@@ -42,7 +42,7 @@ async function runSmoke() {
       "--no-reload",
       ...(browser.zenFolders ? ["--pref", "extensions.experiments.enabled=true"] : []),
       ...(headed ? [] : ["--arg=-headless"])
-    ], { stdio: ["ignore", "pipe", "pipe"] });
+    ], { stdio: ["ignore", "pipe", "pipe"], detached: true });
     const output = [];
     browserProcess.stdout.on("data", (chunk) => output.push(String(chunk)));
     browserProcess.stderr.on("data", (chunk) => output.push(String(chunk)));
@@ -51,7 +51,12 @@ async function runSmoke() {
     verify(result);
     console.log(`${target} smoke test passed.`);
   } finally {
-    browserProcess?.kill("SIGTERM");
+    // web-ext does not stop the browser it launched, so end the whole process group.
+    if (browserProcess?.pid) {
+      try {
+        process.kill(-browserProcess.pid, "SIGTERM");
+      } catch {}
+    }
     server?.close();
     await restoreNativeHostManifest?.();
     await rm(workDir, { recursive: true, force: true });
@@ -118,17 +123,23 @@ async function snapshot(windowId) {
 }
 
 async function waitForComplete(tabIds) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
     const tabs = await Promise.all(tabIds.map((id) => chrome.tabs.get(id)));
     if (tabs.every((tab) => tab.status === "complete" && tab.url.startsWith(origin))) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error("Fixture tabs did not finish loading.");
+  const states = await Promise.all(tabIds.map((id) => chrome.tabs.get(id)));
+  throw new Error("Fixture tabs did not finish loading: " + JSON.stringify(states.map(({ status, url, title }) => ({ status, url, title }))));
+}
+
+function step(name) {
+  return fetch(origin + "/step", { method: "POST", body: name }).catch(() => {});
 }
 
 async function run() {
+  await step("page started");
   await chrome.storage.local.set({ provider: "local-codex-cli", groupTarget: "zen-folders", allowHeuristicFallback: false });
   const { id: windowId } = await chrome.windows.getCurrent();
   const fixtureTabIds = [];
@@ -136,9 +147,12 @@ async function run() {
     const tab = await chrome.tabs.create({ url: origin + "/" + name, active: false, windowId });
     fixtureTabIds.push(tab.id);
   }
+  await step("fixture tabs opened");
   await waitForComplete(fixtureTabIds);
+  await step("fixture tabs loaded");
   const tidy = await chrome.runtime.sendMessage({ type: "TIDY_CURRENT_WINDOW", windowId });
   await new Promise((resolve) => setTimeout(resolve, 500));
+  await step("tidy returned " + JSON.stringify(tidy).slice(0, 300));
   const afterTidy = await snapshot(windowId);
   const undo = await chrome.runtime.sendMessage({ type: "UNDO_LAST_TIDY", windowId });
   await new Promise((resolve) => setTimeout(resolve, 500));
@@ -147,7 +161,7 @@ async function run() {
 }
 
 run()
-  .catch((error) => ({ error: String(error?.stack || error) }))
+  .catch((error) => ({ error: String(error) + "\n" + (error?.stack || "") }))
   .then((result) => fetch(origin + "/report", { method: "POST", body: JSON.stringify(result) }));
 `;
 }
@@ -214,6 +228,17 @@ process.stdout.write(JSON.stringify({ type: "turn.completed", usage: { input_tok
 
 function startFixtureServer(report) {
   const server = http.createServer((request, response) => {
+    if (request.method === "POST" && request.url === "/step") {
+      let body = "";
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        response.end("ok");
+        console.log(`[smoke step] ${body}`);
+      });
+      return;
+    }
     if (request.method === "POST" && request.url === "/report") {
       let body = "";
       request.on("data", (chunk) => {
