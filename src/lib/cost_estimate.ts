@@ -7,7 +7,7 @@ type CostSettings = Pick<Settings, "provider"> & Partial<Pick<
 
 interface ModelPrice {
   provider: "openai" | "anthropic";
-  modelPrefix: string;
+  model: string;
   inputUsdPerMillion: number;
   outputUsdPerMillion: number;
 }
@@ -16,18 +16,18 @@ interface ModelPrice {
 // providers' first-party pricing pages. Local subscription plans may bill
 // differently, so callers surface these values explicitly as API estimates.
 const MODEL_PRICES: ModelPrice[] = [
-  { provider: "openai", modelPrefix: "gpt-5.4-mini", inputUsdPerMillion: 0.75, outputUsdPerMillion: 4.5 },
-  { provider: "openai", modelPrefix: "gpt-5.4-nano", inputUsdPerMillion: 0.2, outputUsdPerMillion: 1.25 },
-  { provider: "openai", modelPrefix: "gpt-5.5", inputUsdPerMillion: 5, outputUsdPerMillion: 30 },
-  { provider: "openai", modelPrefix: "gpt-5.4", inputUsdPerMillion: 2.5, outputUsdPerMillion: 15 },
-  { provider: "openai", modelPrefix: "gpt-5-mini", inputUsdPerMillion: 0.25, outputUsdPerMillion: 2 },
-  { provider: "openai", modelPrefix: "gpt-5-nano", inputUsdPerMillion: 0.05, outputUsdPerMillion: 0.4 },
-  { provider: "openai", modelPrefix: "gpt-5", inputUsdPerMillion: 1.25, outputUsdPerMillion: 10 },
-  { provider: "anthropic", modelPrefix: "claude-fable-5", inputUsdPerMillion: 10, outputUsdPerMillion: 50 },
-  { provider: "anthropic", modelPrefix: "claude-opus-4-8", inputUsdPerMillion: 5, outputUsdPerMillion: 25 },
-  { provider: "anthropic", modelPrefix: "claude-sonnet-5", inputUsdPerMillion: 3, outputUsdPerMillion: 15 },
-  { provider: "anthropic", modelPrefix: "claude-sonnet-4-6", inputUsdPerMillion: 3, outputUsdPerMillion: 15 },
-  { provider: "anthropic", modelPrefix: "claude-haiku-4-5", inputUsdPerMillion: 1, outputUsdPerMillion: 5 }
+  { provider: "openai", model: "gpt-5.4-mini", inputUsdPerMillion: 0.75, outputUsdPerMillion: 4.5 },
+  { provider: "openai", model: "gpt-5.4-nano", inputUsdPerMillion: 0.2, outputUsdPerMillion: 1.25 },
+  { provider: "openai", model: "gpt-5.5", inputUsdPerMillion: 5, outputUsdPerMillion: 30 },
+  { provider: "openai", model: "gpt-5.4", inputUsdPerMillion: 2.5, outputUsdPerMillion: 15 },
+  { provider: "openai", model: "gpt-5-mini", inputUsdPerMillion: 0.25, outputUsdPerMillion: 2 },
+  { provider: "openai", model: "gpt-5-nano", inputUsdPerMillion: 0.05, outputUsdPerMillion: 0.4 },
+  { provider: "openai", model: "gpt-5", inputUsdPerMillion: 1.25, outputUsdPerMillion: 10 },
+  { provider: "anthropic", model: "claude-fable-5", inputUsdPerMillion: 10, outputUsdPerMillion: 50 },
+  { provider: "anthropic", model: "claude-opus-4-8", inputUsdPerMillion: 5, outputUsdPerMillion: 25 },
+  { provider: "anthropic", model: "claude-sonnet-5", inputUsdPerMillion: 3, outputUsdPerMillion: 15 },
+  { provider: "anthropic", model: "claude-sonnet-4-6", inputUsdPerMillion: 3, outputUsdPerMillion: 15 },
+  { provider: "anthropic", model: "claude-haiku-4-5", inputUsdPerMillion: 1, outputUsdPerMillion: 5 }
 ];
 
 export function estimateProviderUsageCost(
@@ -47,8 +47,9 @@ export function estimateProviderUsageCost(
     return undefined;
   }
 
+  const modelId = normalizeModelSnapshot(model, providerFamily);
   const price = MODEL_PRICES.find((candidate) =>
-    candidate.provider === providerFamily && modelMatchesPrefix(model, candidate.modelPrefix)
+    candidate.provider === providerFamily && candidate.model === modelId
   );
   if (!price) {
     return undefined;
@@ -82,8 +83,11 @@ function getPricingModel(settings: CostSettings): string {
   }
 }
 
-function modelMatchesPrefix(model: string, prefix: string): boolean {
-  return model === prefix || model.startsWith(`${prefix}-`);
+function normalizeModelSnapshot(model: string, provider: ModelPrice["provider"]): string {
+  // Only dated snapshots inherit a model's price; variants require their own entry.
+  return provider === "openai"
+    ? model.replace(/-\d{4}-\d{2}-\d{2}$/, "")
+    : model.replace(/-\d{8}$/, "");
 }
 
 function finiteNonNegativeNumber(value: unknown): number | undefined {

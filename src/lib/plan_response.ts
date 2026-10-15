@@ -1,6 +1,7 @@
 import { getProviderLabel } from "./provider_metadata.js";
 import type {
   AppliedAssignment,
+  AppliedGroup,
   CurrentWindowPlanResult,
   ExistingGroup,
   PlanGroup,
@@ -74,6 +75,23 @@ export function createPlanResponse(planResult: PlanResponseInput, extras: PlanRe
     undoAvailable: extras.undoAvailable ?? false,
     message: buildPlanMessage(planResult, extras),
     ...(extras.preview === undefined ? {} : { preview: extras.preview })
+  };
+}
+
+export function createTidyResponse(
+  planResult: CurrentWindowPlanResult,
+  appliedGroups: AppliedGroup[],
+  appliedAssignments: AppliedAssignment[],
+  expandedGroupCount: number
+) {
+  const response = createPlanResponse(planResult, { undoAvailable: true });
+  return {
+    ...response,
+    groups: appliedGroups,
+    assignments: appliedAssignments.map(({ groupId, title, count }) => ({ groupId, title, count })),
+    message: planResult.canApply
+      ? buildTidySuccessMessage(appliedGroups, planResult.skipped, planResult.providerResult, appliedAssignments)
+      : `${response.message} Collapsed ${expandedGroupCount} existing group${expandedGroupCount === 1 ? "" : "s"}.`
   };
 }
 

@@ -36,50 +36,60 @@ const CLAUDE_MODEL_OPTIONS: NativeModelInfo[] = [
 const CODEX_REASONING_LEVELS = ["low", "medium", "high", "xhigh"];
 const CLAUDE_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
-let currentSettings: Settings = DEFAULT_SETTINGS;
+let savedSettings: Settings = DEFAULT_SETTINGS;
 let draftSettings: Settings = DEFAULT_SETTINGS;
-let activeProvider: Provider = DEFAULT_SETTINGS.provider;
 let codexModels: NativeModelInfo[] = [];
 let localCliControlSequence = 0;
-let providerSelectionSequence = 0;
-let latestSaveIntent = 0;
+let bridgeCheck: { provider: Provider } | undefined;
+let providerControlLocks = 0;
 let saveQueue: Promise<unknown> = Promise.resolve();
 let autoSaveTimer: number | undefined;
 
 initOptions();
 
 providerSelect.addEventListener("change", async () => {
+  if (providerSelect.disabled) {
+    providerSelect.value = draftSettings.provider;
+    return;
+  }
   const provider = providerSelect.value as Provider;
-  const sequence = ++providerSelectionSequence;
-  updateProviderSections(provider);
-  updateDataScope();
-  const controlRefresh = refreshLocalCliControls(provider, draftSettings, false);
+  draftSettings = normalizeSettings(readFormSettings());
+  localCliControlSequence += 1;
+  bridgeCheck = undefined;
+  // Chrome grants require a user gesture. Keep selection locked through cleanup
+  // so a later grant cannot race an earlier permission removal.
+  const unlockProviderControls = lockProviderControls();
   setSaveStatus("Saving", false);
-
+  let permissionError = "";
+  let didSave = false;
   try {
     await ensureProviderPermission(provider);
-    await controlRefresh;
-    if (sequence !== providerSelectionSequence || providerSelect.value !== provider) {
-      return;
-    }
-    activeProvider = provider;
-    await persistCurrentForm(true);
-  } catch (error) {
-    if (sequence !== providerSelectionSequence) {
-      return;
-    }
-    providerSelect.value = activeProvider;
-    updateProviderSections(activeProvider);
+    setLocalCliControlsDisabled(true);
+    draftSettings = { ...draftSettings, provider };
+    updateProviderSections(provider);
     updateDataScope();
-    await refreshLocalCliControls(activeProvider, draftSettings, false);
-    setSaveStatus(error instanceof Error ? error.message : String(error), true);
+    didSave = await persistCurrentForm();
+  } catch (error) {
+    permissionError = error instanceof Error ? error.message : String(error);
+  } finally {
+    providerSelect.value = draftSettings.provider;
+    unlockProviderControls();
   }
+
+  updateProviderSections(draftSettings.provider);
+  updateDataScope();
+  if (permissionError) {
+    setSaveStatus(permissionError, true);
+  } else if (didSave) {
+    showSaveCompletion(savedSettings);
+  }
+  await refreshLocalCliControls(draftSettings.provider, draftSettings);
 });
 
 modelSelect.addEventListener("change", () => {
   localCliControlSequence += 1;
-  if (providerSelect.value === "local-codex-cli") {
-    populateReasoningSelect(providerSelect.value, normalizeSettings(readFormSettings()));
+  if (draftSettings.provider === "local-codex-cli") {
+    populateReasoningSelect(draftSettings.provider, normalizeSettings(readFormSettings()));
   }
   void persistCurrentForm();
 });
@@ -130,9 +140,8 @@ form.addEventListener("submit", (event) => {
 
 async function initOptions() {
   const settings = await getSettings();
-  currentSettings = settings;
+  savedSettings = settings;
   draftSettings = settings;
-  activeProvider = settings.provider;
   for (const [key, value] of Object.entries(settings)) {
     const input = ((form.elements as any)[key] || form.elements.namedItem?.(key)) as HTMLInputElement | HTMLSelectElement | null;
     if (!input) {
@@ -145,13 +154,14 @@ async function initOptions() {
     }
   }
   updateProviderSections(settings.provider);
-  await refreshLocalCliControls(settings.provider, settings, false);
-  updateDataScope(settings);
+  await refreshLocalCliControls(settings.provider, settings);
+  updateDataScope();
   updateAutoTidyControls();
-  setSaveStatus("Saved", false);
+  showSaveCompletion(settings);
 }
 
 function scheduleAutoSave(): void {
+  draftSettings = normalizeSettings(readFormSettings());
   if (autoSaveTimer !== undefined) {
     window.clearTimeout(autoSaveTimer);
   }
@@ -162,47 +172,50 @@ function scheduleAutoSave(): void {
   }, 350);
 }
 
-async function persistCurrentForm(refreshControls = false): Promise<void> {
+async function persistCurrentForm(): Promise<boolean> {
   if (autoSaveTimer !== undefined) {
     window.clearTimeout(autoSaveTimer);
     autoSaveTimer = undefined;
   }
 
-  const intent = ++latestSaveIntent;
   const settings = normalizeSettings(readFormSettings());
   draftSettings = settings;
-  const previousProvider = currentSettings.provider;
   setSaveStatus("Saving", false);
+  // A retry after a failed provider save can also remove permissions. Its lock
+  // must survive other overlapping saves and the original provider handler.
+  const unlockProviderControls = settings.provider !== savedSettings.provider ? lockProviderControls() : undefined;
+  let didSave = false;
 
   try {
     const write = saveQueue.then(async () => {
-      if (intent !== latestSaveIntent) {
-        return false;
-      }
+      const previousProvider = savedSettings.provider;
       await saveSettings(settings);
-      currentSettings = settings;
+      savedSettings = settings;
       if (previousProvider !== settings.provider) {
         await removeUnusedProviderPermissions(settings.provider);
       }
-      return true;
     });
     saveQueue = write.catch(() => {});
-    const didSave = await write;
-    if (!didSave || intent !== latestSaveIntent) {
-      return;
-    }
-
-    if (refreshControls && providerSelect.value === settings.provider) {
-      await refreshLocalCliControls(settings.provider, settings, false);
-    }
-    if (intent === latestSaveIntent) {
-      updateDataScope();
-      setSaveStatus("Saved", false);
-    }
+    await write;
+    didSave = true;
+    return true;
   } catch (error) {
-    if (intent === latestSaveIntent) {
+    if (settings === draftSettings) {
       setSaveStatus(error instanceof Error ? error.message : String(error), true);
     }
+    return false;
+  } finally {
+    unlockProviderControls?.();
+    if (didSave) {
+      showSaveCompletion(settings);
+    }
+  }
+}
+
+function showSaveCompletion(settings: Settings): void {
+  if (settings === draftSettings && (providerControlLocks === 0 || bridgeCheck !== undefined)) {
+    updateDataScope();
+    setSaveStatus("Saved", false);
   }
 }
 
@@ -230,6 +243,20 @@ function updateAutoTidyControls(): void {
   autoTidyIntervalInput.disabled = !autoTidyEnabledInput.checked;
 }
 
+function lockProviderControls(): () => void {
+  providerControlLocks += 1;
+  updateProviderControls();
+  return () => {
+    providerControlLocks -= 1;
+    updateProviderControls();
+  };
+}
+
+function updateProviderControls(): void {
+  providerSelect.disabled = providerControlLocks > 0;
+  testNativeBridgeButton.disabled = providerControlLocks > 0 || bridgeCheck !== undefined;
+}
+
 function updateProviderSections(provider: string): void {
   for (const section of document.querySelectorAll("[data-provider-section]")) {
     const providerSection = section as HTMLElement;
@@ -245,7 +272,8 @@ function updateDataScope(settings = readCurrentScopeSettings()): void {
   dataSummary.textContent = scope.dataSummary;
 }
 
-function readFormSettings(provider = activeProvider): PartialSettings {
+function readFormSettings(): PartialSettings {
+  const provider = draftSettings.provider;
   const formData = new FormData(form);
   const storedLocalCliModel = provider === "local-codex-cli" ? draftSettings.codexCliModel : draftSettings.claudeCliModel;
   const storedLocalCliReasoningEffort = provider === "local-codex-cli" ? draftSettings.codexReasoningEffort : draftSettings.claudeReasoningEffort;
@@ -273,7 +301,7 @@ function readFormSettings(provider = activeProvider): PartialSettings {
   };
 }
 
-async function refreshLocalCliControls(provider: string, settings: Settings, allowPermissionRequest = false): Promise<boolean> {
+async function refreshLocalCliControls(provider: Provider, settings: Settings): Promise<boolean> {
   const sequence = ++localCliControlSequence;
   if (!isLocalCliProvider(provider)) {
     codexModels = [];
@@ -296,19 +324,7 @@ async function refreshLocalCliControls(provider: string, settings: Settings, all
   replaceReasoningOptions("", [], "");
   setLocalCliControlsDisabled(true);
   setNativeBridgeStatus("Loading Codex models...", false);
-  if (allowPermissionRequest) {
-    try {
-      await ensureProviderPermission(provider);
-      if (sequence !== localCliControlSequence) {
-        return false;
-      }
-    } catch {
-      if (sequence === localCliControlSequence) {
-        commitCodexControls([], settings, "Grant native messaging access to load Codex models.", false);
-      }
-      return false;
-    }
-  } else if (!(await hasNativeMessagingPermission())) {
+  if (!(await hasNativeMessagingPermission())) {
     if (sequence !== localCliControlSequence) {
       return false;
     }
@@ -336,6 +352,10 @@ function commitCodexControls(models: NativeModelInfo[], settings: Settings, stat
   codexModels = models;
   replaceModelOptions("Use codex CLI's own default", models, settings.codexCliModel);
   populateReasoningSelect("local-codex-cli", settings);
+  if (settings.codexReasoningEffort && reasoningSelect.value !== settings.codexReasoningEffort) {
+    reasoningSelect.appendChild(createOption(settings.codexReasoningEffort, `${settings.codexReasoningEffort} (saved)`));
+    reasoningSelect.value = settings.codexReasoningEffort;
+  }
   setLocalCliControlsDisabled(false);
   setNativeBridgeStatus(status, isError);
 }
@@ -410,7 +430,7 @@ function createOption(value: string, label: string): HTMLOptionElement {
 
 function readCurrentScopeSettings(): Pick<Settings, "provider" | "includeFullUrls" | "includePageHints"> {
   return {
-    provider: (providerSelect.value || DEFAULT_SETTINGS.provider) as Provider,
+    provider: draftSettings.provider,
     includeFullUrls: includeFullUrlsInput.checked,
     includePageHints: includePageHintsInput ? includePageHintsInput.checked : false
   };
@@ -449,21 +469,38 @@ async function hasNativeMessagingPermission(): Promise<boolean> {
 }
 
 async function testNativeBridge() {
-  const provider = providerSelect.value || DEFAULT_SETTINGS.provider;
+  if (testNativeBridgeButton.disabled) {
+    return;
+  }
+  const provider = draftSettings.provider;
   if (!isLocalCliProvider(provider)) {
     setNativeBridgeStatus("Choose a local CLI provider first.", true);
     return;
   }
 
-  testNativeBridgeButton.disabled = true;
+  const check = { provider };
+  bridgeCheck = check;
+  const isCurrent = () => bridgeCheck === check;
+  updateProviderControls();
   setNativeBridgeStatus("Checking...", false);
   try {
-    await ensureProviderPermission(provider);
+    const unlockProviderControls = lockProviderControls();
+    try {
+      await ensureProviderPermission(provider);
+    } finally {
+      unlockProviderControls();
+    }
+    if (!isCurrent()) {
+      return;
+    }
     const status = await checkNativeCliStatus(provider);
+    if (!isCurrent()) {
+      return;
+    }
     if (status.configured && status.executableAvailable && status.authenticated) {
       if (provider === "local-codex-cli") {
-        const modelsLoaded = await refreshLocalCliControls(provider, draftSettings, false);
-        if (!modelsLoaded) {
+        const modelsLoaded = await refreshLocalCliControls(provider, draftSettings);
+        if (!modelsLoaded || !isCurrent()) {
           return;
         }
       }
@@ -488,9 +525,14 @@ async function testNativeBridge() {
     }
     setNativeBridgeStatus(`${getLocalCliLabel(provider)} bridge is not ready.`, true);
   } catch (error) {
-    setNativeBridgeStatus(getFriendlyProviderErrorMessage(error), true);
+    if (isCurrent()) {
+      setNativeBridgeStatus(getFriendlyProviderErrorMessage(error), true);
+    }
   } finally {
-    testNativeBridgeButton.disabled = false;
+    if (isCurrent()) {
+      bridgeCheck = undefined;
+      updateProviderControls();
+    }
   }
 }
 
