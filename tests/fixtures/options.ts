@@ -14,7 +14,7 @@ interface FakeElement {
   hidden: boolean;
   disabled: boolean;
   children: FakeElement[];
-  dataset: { providerSection?: string };
+  dataset: { providerSection?: string; state?: string };
   elements?: Record<string, FakeElement>;
   appendChild(child: FakeElement): FakeElement;
   replaceChildren(...children: FakeElement[]): void;
@@ -48,6 +48,11 @@ interface FakeElements {
   groupTarget: FakeElement;
   "group-target-field": FakeElement;
   "provider-chrome-ai": FakeElement;
+  "cli-account": FakeElement;
+  "cli-account-title": FakeElement;
+  "cli-account-detail": FakeElement;
+  "cli-setup": FakeElement;
+  "cli-setup-command": FakeElement;
   "data-mode": FakeElement;
   "data-summary": FakeElement;
   "test-native-bridge": FakeElement;
@@ -62,6 +67,7 @@ interface NativeStatus {
   authChecked: boolean;
   authenticated: boolean;
   lockExecutables: boolean;
+  account?: { authMethod?: string; plan?: string; email?: string };
 }
 
 interface NativeMessage {
@@ -88,6 +94,8 @@ interface ImportOptionsConfig {
   deferStorageWrites?: boolean;
   gecko?: boolean;
   zenFolders?: boolean;
+  accountPanel?: boolean;
+  nativeHostMissing?: boolean;
 }
 
 type ExperimentGlobal = typeof globalThis & { browser?: { zenFolders: Record<string, never> } };
@@ -103,9 +111,11 @@ async function importOptions({
   deferNativeStatusResponses = false,
   deferStorageWrites = false,
   gecko = false,
-  zenFolders = false
+  zenFolders = false,
+  accountPanel = false,
+  nativeHostMissing = false
 }: ImportOptionsConfig = {}) {
-  const elements = createFakeElements();
+  const elements = createFakeElements(accountPanel);
   (globalThis as ExperimentGlobal).browser = zenFolders ? { zenFolders: {} } : undefined;
   const fakeChrome = createFakeChrome({
     permissionGrant,
@@ -117,7 +127,8 @@ async function importOptions({
     deferNativeModelResponses,
     deferNativeStatusResponses,
     deferStorageWrites,
-    gecko
+    gecko,
+    nativeHostMissing
   });
   globalThis.chrome = fakeChrome as unknown as typeof globalThis.chrome;
   globalThis.document = createFakeDocument(elements) as unknown as Document;
@@ -155,7 +166,7 @@ async function importOptions({
   return { elements, chrome: fakeChrome };
 }
 
-function createFakeElements(): FakeElements {
+function createFakeElements(accountPanel: boolean): FakeElements {
   const form = createElement("settings-form", "form");
   form.elements = {};
 
@@ -173,6 +184,12 @@ function createFakeElements(): FakeElements {
     "provider-chrome-ai": createElement("provider-chrome-ai", "option")
   };
   elementById["group-target-field"]!.hidden = true;
+  if (accountPanel) {
+    for (const id of ["cli-account", "cli-account-title", "cli-account-detail", "cli-setup", "cli-setup-command"]) {
+      elementById[id] = createElement(id, "div");
+    }
+    elementById["cli-setup"]!.hidden = true;
+  }
 
   const fieldDefinitions: Array<[string, string, string | boolean]> = [
     ["provider", "select", "heuristic"],
@@ -298,8 +315,9 @@ function createFakeChrome({
   deferNativeModelResponses,
   deferNativeStatusResponses,
   deferStorageWrites,
-  gecko
-}: Omit<Required<ImportOptionsConfig>, "zenFolders">) {
+  gecko,
+  nativeHostMissing
+}: Omit<Required<ImportOptionsConfig>, "zenFolders" | "accountPanel">) {
   const state = {
     storage: { ...stored },
     permissionRequests: [] as chrome.permissions.Permissions[],
@@ -359,7 +377,8 @@ function createFakeChrome({
       connectNative() {
         const messageListeners: Array<(message: Record<string, unknown>) => void> = [];
         const disconnectListeners: Array<() => void> = [];
-        return {
+        const port = {
+          error: null as Error | null,
           onMessage: {
             addListener(callback: (message: Record<string, unknown>) => void) {
               messageListeners.push(callback);
@@ -372,6 +391,15 @@ function createFakeChrome({
           },
           postMessage(message: NativeMessage) {
             state.sentNativeMessages.push(message);
+            if (nativeHostMissing) {
+              setTimeout(() => {
+                port.error = new Error("No such native application com.fabianpieringer.tab_grouper");
+                for (const callback of disconnectListeners) {
+                  callback();
+                }
+              }, 0);
+              return;
+            }
             const respond = () => {
               for (const callback of messageListeners) {
                 if (message.type === "NATIVE_HOST_LIST_MODELS_REQUEST") {
@@ -418,6 +446,7 @@ function createFakeChrome({
             }
           }
         };
+        return port;
       }
     }
   };

@@ -104,12 +104,13 @@ type Response struct {
 }
 
 type Status struct {
-	Provider            string `json:"provider"`
-	Configured          bool   `json:"configured"`
-	ExecutableAvailable bool   `json:"executableAvailable"`
-	AuthChecked         bool   `json:"authChecked"`
-	Authenticated       bool   `json:"authenticated"`
-	LockExecutables     bool   `json:"lockExecutables"`
+	Provider            string   `json:"provider"`
+	Configured          bool     `json:"configured"`
+	ExecutableAvailable bool     `json:"executableAvailable"`
+	AuthChecked         bool     `json:"authChecked"`
+	Authenticated       bool     `json:"authenticated"`
+	LockExecutables     bool     `json:"lockExecutables"`
+	Account             *Account `json:"account,omitempty"`
 }
 
 type ModelInfo struct {

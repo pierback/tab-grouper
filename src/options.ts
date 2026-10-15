@@ -1,6 +1,8 @@
 import { DEFAULT_SETTINGS, getSettings, normalizeSettings, saveSettings } from "./lib/settings.js";
 import { checkNativeCliStatus, listNativeModels } from "./lib/native_cli_provider.js";
+import type { NativeCliStatus } from "./lib/native_cli_provider.js";
 import {
+  formatCliAccountPlan,
   getAllProviderOrigins,
   getAllProviderPermissions,
   getFriendlyProviderErrorMessage,
@@ -12,7 +14,7 @@ import {
 } from "./lib/provider_metadata.js";
 import { isGeckoExtensionRuntime } from "./lib/platform.js";
 import { getZenFoldersApi } from "./lib/zen_folders.js";
-import type { NativeModelInfo, PartialSettings, Provider, Settings } from "./lib/types.js";
+import type { NativeModelInfo, PartialSettings, Provider, ProviderError, Settings } from "./lib/types.js";
 
 const form = document.querySelector<HTMLFormElement>("#settings-form")!;
 const saveStatus = document.querySelector<HTMLElement>("#save-status")!;
@@ -32,6 +34,17 @@ const groupTargetField = document.querySelector<HTMLElement>("#group-target-fiel
 const groupTargetSelect = document.querySelector<HTMLSelectElement>("#groupTarget");
 const chromeAiProviderOption = document.querySelector<HTMLOptionElement>("#provider-chrome-ai");
 const zenFoldersAvailable = getZenFoldersApi() !== null;
+const cliAccount = document.querySelector<HTMLElement>("#cli-account");
+const cliAccountTitle = document.querySelector<HTMLElement>("#cli-account-title");
+const cliAccountDetail = document.querySelector<HTMLElement>("#cli-account-detail");
+const cliSetup = document.querySelector<HTMLElement>("#cli-setup");
+const cliSetupCommand = document.querySelector<HTMLElement>("#cli-setup-command");
+
+type CliAccountState =
+  | { kind: "checking" }
+  | { kind: "needs-permission" }
+  | { kind: "status"; status: NativeCliStatus }
+  | { kind: "error"; error: unknown };
 
 const CLAUDE_MODEL_OPTIONS: NativeModelInfo[] = [
   { slug: "claude-fable-5", displayName: "Fable 5" },
@@ -50,6 +63,7 @@ let bridgeCheck: { provider: Provider } | undefined;
 let providerControlLocks = 0;
 let saveQueue: Promise<unknown> = Promise.resolve();
 let autoSaveTimer: number | undefined;
+let cliAccountSequence = 0;
 
 initOptions();
 
@@ -89,6 +103,7 @@ providerSelect.addEventListener("change", async () => {
   } else if (didSave) {
     showSaveCompletion(savedSettings);
   }
+  void autoCheckCliAccount(draftSettings.provider);
   await refreshLocalCliControls(draftSettings.provider, draftSettings);
 });
 
@@ -170,6 +185,7 @@ async function initOptions() {
     chromeAiProviderOption.hidden = isGeckoExtensionRuntime() && settings.provider !== "chrome-ai";
   }
   updateProviderSections(settings.provider);
+  void autoCheckCliAccount(settings.provider);
   await refreshLocalCliControls(settings.provider, settings);
   updateDataScope();
   updateAutoTidyControls();
@@ -500,6 +516,8 @@ async function testNativeBridge() {
   const isCurrent = () => bridgeCheck === check;
   updateProviderControls();
   setNativeBridgeStatus("Checking...", false);
+  const accountSequence = ++cliAccountSequence;
+  renderCliAccount(provider, { kind: "checking" });
   try {
     const unlockProviderControls = lockProviderControls();
     try {
@@ -513,6 +531,9 @@ async function testNativeBridge() {
     const status = await checkNativeCliStatus(provider);
     if (!isCurrent()) {
       return;
+    }
+    if (accountSequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "status", status });
     }
     if (status.configured && status.executableAvailable && status.authenticated) {
       if (provider === "local-codex-cli") {
@@ -545,12 +566,101 @@ async function testNativeBridge() {
     if (isCurrent()) {
       setNativeBridgeStatus(getFriendlyProviderErrorMessage(error), true);
     }
+    if (accountSequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "error", error });
+    }
   } finally {
     if (isCurrent()) {
       bridgeCheck = undefined;
       updateProviderControls();
     }
   }
+}
+
+async function autoCheckCliAccount(provider: Provider): Promise<void> {
+  if (!cliAccount || !isLocalCliProvider(provider) || bridgeCheck !== undefined) {
+    return;
+  }
+  const sequence = ++cliAccountSequence;
+  if (!(await hasNativeMessagingPermission())) {
+    if (sequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "needs-permission" });
+    }
+    return;
+  }
+  renderCliAccount(provider, { kind: "checking" });
+  try {
+    const status = await checkNativeCliStatus(provider);
+    if (sequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "status", status });
+    }
+  } catch (error) {
+    if (sequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "error", error });
+    }
+  }
+}
+
+function renderCliAccount(provider: Provider, state: CliAccountState): void {
+  if (!cliAccount || !cliAccountTitle || !cliAccountDetail) {
+    return;
+  }
+  const label = getLocalCliLabel(provider);
+  const view = describeCliAccount(provider, label, state);
+  cliAccount.dataset.state = view.state;
+  cliAccountTitle.textContent = view.title;
+  cliAccountDetail.textContent = view.detail;
+  if (cliSetup && cliSetupCommand) {
+    cliSetup.hidden = !view.showSetup;
+    cliSetupCommand.textContent = getNativeInstallCommand();
+  }
+}
+
+function describeCliAccount(provider: Provider, label: string, state: CliAccountState) {
+  switch (state.kind) {
+    case "checking":
+      return { state: "checking", title: `Checking ${label}…`, detail: "", showSetup: false };
+    case "needs-permission":
+      return { state: "idle", title: "Not connected yet", detail: "Check the connection to allow the browser to talk to the local bridge.", showSetup: false };
+    case "error": {
+      const kind = (state.error as ProviderError | undefined)?.providerErrorKind;
+      const notInstalled = kind === "native-host-not-found" || kind === "native-host-forbidden";
+      return {
+        state: "error",
+        title: notInstalled ? "Local bridge not installed" : "Bridge check failed",
+        detail: notInstalled ? `Needed to reach the ${label}.` : getFriendlyProviderErrorMessage(state.error),
+        showSetup: notInstalled || kind === "native-host-config-error"
+      };
+    }
+    case "status": {
+      const { status } = state;
+      if (!status.configured || !status.executableAvailable) {
+        return { state: "error", title: `${label} not found`, detail: "Install the CLI, then reinstall the bridge so it picks up the path.", showSetup: true };
+      }
+      if (!status.authChecked) {
+        return { state: "warning", title: `${label} found`, detail: "Sign-in could not be verified.", showSetup: false };
+      }
+      if (!status.authenticated) {
+        const loginCommand = provider === "local-claude-cli" ? "claude auth login" : "codex login";
+        return { state: "warning", title: `${label} is not signed in`, detail: `Run \`${loginCommand}\` in a terminal, then check again.`, showSetup: false };
+      }
+      const plan = formatCliAccountPlan(provider, status.account);
+      const detail = [plan, status.account?.email].filter(Boolean).join(" · ");
+      return {
+        state: "ready",
+        title: `${label} connected`,
+        detail: detail || "Signed in. Reinstall the bridge to see which plan is used.",
+        showSetup: false
+      };
+    }
+  }
+}
+
+function getNativeInstallCommand(): string {
+  if (!isGeckoExtensionRuntime()) {
+    return "nub run native:install";
+  }
+  return `nub run native:install --browser ${zenFoldersAvailable ? "zen" : "firefox"}`;
 }
 
 async function removeUnusedProviderPermissions(provider: string): Promise<void> {

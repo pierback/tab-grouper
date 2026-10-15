@@ -3,28 +3,31 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Tab Grouper Options</title>
+    <title>Tab Grouper Settings</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body class="options-page">
     <main class="options-shell">
       <header class="page-header">
-        <div class="brand-lockup">
-          <span class="brand-mark" aria-hidden="true">TG</span>
-          <div class="brand-copy">
-            <span class="eyebrow">Configuration</span>
-            <h1>Tab Grouper</h1>
-            <p class="page-subtitle">Choose how tabs are understood, grouped, and handled.</p>
-          </div>
+        <span class="brand-mark brand-mark-large" aria-hidden="true">
+          <svg viewBox="0 0 20 20" width="20" height="20"><rect x="2" y="3" width="7" height="6" rx="1.6"/><rect x="11" y="3" width="7" height="6" rx="1.6"/><rect x="2" y="11" width="16" height="6" rx="1.6"/></svg>
+        </span>
+        <div>
+          <h1>Tab Grouper</h1>
+          <p class="page-subtitle">Choose how tabs are understood, grouped, and handled.</p>
         </div>
+        <span id="save-status" class="save-status" aria-live="polite"></span>
       </header>
 
       <form id="settings-form" class="settings-form">
-        <section class="section">
-          <h2>Provider</h2>
-          <label class="field">
-            <span>Grouping engine</span>
-            <select id="provider" name="provider">
+        <section class="card">
+          <h2>Grouping engine</h2>
+          <div class="row">
+            <label class="row-label" for="provider">
+              <span>Provider</span>
+              <small>Who decides which tabs belong together.</small>
+            </label>
+            <select id="provider" name="provider" class="control-wide">
               <option value="heuristic">Local heuristic</option>
               <option value="local-codex-cli">Local Codex CLI</option>
               <option value="local-claude-cli">Local Claude Code CLI</option>
@@ -32,111 +35,152 @@
               <option value="openai">OpenAI API</option>
               <option value="anthropic">Anthropic API</option>
             </select>
-          </label>
-          <div class="data-scope" aria-live="polite">
-            <div>
-              <span class="label">Data mode</span>
-              <strong id="data-mode">-</strong>
-            </div>
+          </div>
+          <div class="note" aria-live="polite">
+            <strong id="data-mode">-</strong>
             <p id="data-summary"></p>
           </div>
-          <label class="field compact-field">
-            <span>Model timeout <small>seconds</small></span>
-            <input id="providerRequestTimeoutSeconds" name="providerRequestTimeoutSeconds" type="number" min="180" max="300" step="30">
-          </label>
         </section>
 
-        <section class="section provider-section" data-provider-section="openai">
+        <section class="card provider-section" data-provider-section="local-cli">
+          <h2>Local CLI</h2>
+          <div id="cli-account" class="account" data-state="idle">
+            <span class="status-dot" aria-hidden="true"></span>
+            <div class="account-copy">
+              <strong id="cli-account-title">Not checked yet</strong>
+              <span id="cli-account-detail"></span>
+            </div>
+            <button id="test-native-bridge" class="secondary-button" type="button">Check connection</button>
+          </div>
+          <div id="cli-setup" class="setup" hidden>
+            <p>Install the local bridge from your Tab Grouper checkout, then check again:</p>
+            <code id="cli-setup-command"></code>
+          </div>
+          <p id="native-bridge-status" class="inline-status" aria-live="polite"></p>
+          <div class="row">
+            <label class="row-label" for="model">
+              <span>Model</span>
+            </label>
+            <select id="model" name="model" class="control-wide"></select>
+          </div>
+          <div class="row">
+            <label class="row-label" for="reasoning">
+              <span>Reasoning</span>
+              <small>Higher is slower but sorts ambiguous tabs better.</small>
+            </label>
+            <select id="reasoning" name="reasoning" class="control-wide"></select>
+          </div>
+        </section>
+
+        <section class="card provider-section" data-provider-section="openai">
           <h2>OpenAI</h2>
-          <label class="field">
-            <span>API key</span>
-            <input id="openaiApiKey" name="openaiApiKey" type="password" autocomplete="off" placeholder="sk-...">
-          </label>
-          <label class="field">
-            <span>Model</span>
-            <input id="openaiModel" name="openaiModel" type="text" placeholder="gpt-5.4-mini">
-          </label>
+          <div class="row">
+            <label class="row-label" for="openaiApiKey"><span>API key</span></label>
+            <input id="openaiApiKey" name="openaiApiKey" class="control-wide" type="password" autocomplete="off" placeholder="sk-...">
+          </div>
+          <div class="row">
+            <label class="row-label" for="openaiModel"><span>Model</span></label>
+            <input id="openaiModel" name="openaiModel" class="control-wide" type="text" placeholder="gpt-5.4-mini">
+          </div>
         </section>
 
-        <section class="section provider-section" data-provider-section="anthropic">
+        <section class="card provider-section" data-provider-section="anthropic">
           <h2>Anthropic</h2>
-          <label class="field">
-            <span>API key</span>
-            <input id="anthropicApiKey" name="anthropicApiKey" type="password" autocomplete="off" placeholder="sk-ant-...">
-          </label>
-          <label class="field">
-            <span>Model</span>
-            <input id="anthropicModel" name="anthropicModel" type="text" placeholder="claude-sonnet-4-6-20260217">
-          </label>
+          <div class="row">
+            <label class="row-label" for="anthropicApiKey"><span>API key</span></label>
+            <input id="anthropicApiKey" name="anthropicApiKey" class="control-wide" type="password" autocomplete="off" placeholder="sk-ant-...">
+          </div>
+          <div class="row">
+            <label class="row-label" for="anthropicModel"><span>Model</span></label>
+            <input id="anthropicModel" name="anthropicModel" class="control-wide" type="text" placeholder="claude-sonnet-4-6-20260217">
+          </div>
         </section>
 
-        <section class="section provider-section" data-provider-section="local-cli">
-          <h2>Local CLI Bridge</h2>
-          <label class="field">
-            <span>Model</span>
-            <select id="model" name="model"></select>
-          </label>
-          <label class="field">
-            <span>Reasoning</span>
-            <select id="reasoning" name="reasoning"></select>
-          </label>
-          <p class="helper-text">Check the native host and pinned CLI path without running a model request.</p>
-          <button id="test-native-bridge" class="secondary-button" type="button">Test bridge</button>
-          <span id="native-bridge-status" class="save-status" aria-live="polite"></span>
-        </section>
-
-        <section class="section">
-          <h2>Behavior</h2>
-          <label class="checkbox-field">
-            <input id="ignorePinnedTabs" name="ignorePinnedTabs" type="checkbox">
-            <span>Ignore pinned tabs</span>
-          </label>
-          <label class="checkbox-field">
-            <input id="keepExistingGroups" name="keepExistingGroups" type="checkbox">
-            <span>Leave existing groups untouched</span>
-          </label>
-          <label class="checkbox-field">
-            <input id="includeFullUrls" name="includeFullUrls" type="checkbox">
-            <span>Send full URLs to AI providers</span>
-          </label>
-          <label class="checkbox-field">
-            <input id="includePageHints" name="includePageHints" type="checkbox">
-            <span>Use superficial page hints</span>
-          </label>
-          <label class="checkbox-field">
-            <input id="allowHeuristicFallback" name="allowHeuristicFallback" type="checkbox">
-            <span>Allow heuristic fallback when the smart provider fails</span>
-          </label>
-          <label id="group-target-field" class="field compact-field" hidden>
-            <span>Create groups as</span>
-            <select id="groupTarget" name="groupTarget">
+        <section class="card">
+          <h2>Grouping</h2>
+          <div id="group-target-field" class="row" hidden>
+            <label class="row-label" for="groupTarget">
+              <span>Create groups as</span>
+              <small>Zen folders live in the pinned section, so grouped tabs get pinned. Undo unpins them.</small>
+            </label>
+            <select id="groupTarget" name="groupTarget" class="control-wide">
               <option value="tab-groups">Tab groups</option>
-              <option value="zen-folders">Zen folders (pins grouped tabs)</option>
+              <option value="zen-folders">Zen folders</option>
             </select>
-          </label>
-          <label class="field compact-field">
-            <span>Minimum group size</span>
-            <input id="minimumGroupSize" name="minimumGroupSize" type="number" min="2" max="10" step="1">
-          </label>
+          </div>
+          <div class="row">
+            <label class="row-label" for="minimumGroupSize">
+              <span>Minimum group size</span>
+              <small>Tabs that would end up in smaller groups stay where they are.</small>
+            </label>
+            <input id="minimumGroupSize" name="minimumGroupSize" class="control-number" type="number" min="2" max="10" step="1">
+          </div>
+          <div class="row">
+            <label class="row-label" for="ignorePinnedTabs">
+              <span>Ignore pinned tabs</span>
+            </label>
+            <input id="ignorePinnedTabs" name="ignorePinnedTabs" class="switch" type="checkbox">
+          </div>
+          <div class="row">
+            <label class="row-label" for="keepExistingGroups">
+              <span>Leave existing groups untouched</span>
+              <small>Off lets tidy regroup tabs that are already in a group.</small>
+            </label>
+            <input id="keepExistingGroups" name="keepExistingGroups" class="switch" type="checkbox">
+          </div>
         </section>
 
-        <section class="section automation-section">
+        <section class="card">
+          <h2>Data &amp; reliability</h2>
+          <div class="row">
+            <label class="row-label" for="includeFullUrls">
+              <span>Send full URLs</span>
+              <small>By default only titles and domains leave the browser.</small>
+            </label>
+            <input id="includeFullUrls" name="includeFullUrls" class="switch" type="checkbox">
+          </div>
+          <div class="row">
+            <label class="row-label" for="includePageHints">
+              <span>Use page hints</span>
+              <small>Reads headings and descriptions of each page. Asks for access per site.</small>
+            </label>
+            <input id="includePageHints" name="includePageHints" class="switch" type="checkbox">
+          </div>
+          <div class="row">
+            <label class="row-label" for="allowHeuristicFallback">
+              <span>Fall back to local heuristic</span>
+              <small>Used when the selected provider fails or times out.</small>
+            </label>
+            <input id="allowHeuristicFallback" name="allowHeuristicFallback" class="switch" type="checkbox">
+          </div>
+          <div class="row">
+            <label class="row-label" for="providerRequestTimeoutSeconds">
+              <span>Model timeout</span>
+              <small>Seconds before giving up on the provider.</small>
+            </label>
+            <input id="providerRequestTimeoutSeconds" name="providerRequestTimeoutSeconds" class="control-number" type="number" min="180" max="300" step="30">
+          </div>
+        </section>
+
+        <section class="card">
           <h2>Automation</h2>
-          <label class="checkbox-field">
-            <input id="autoTidyEnabled" name="autoTidyEnabled" type="checkbox">
-            <span>Automatically tidy open windows</span>
-          </label>
-          <label class="field compact-field">
-            <span>Run every <small>minutes</small></span>
-            <input id="autoTidyIntervalMinutes" name="autoTidyIntervalMinutes" type="number" min="1" max="1440" step="1">
-          </label>
-          <p class="helper-text">Runs quietly across normal browser windows. Every completed tidy leaves its latest undo available.</p>
+          <div class="row">
+            <label class="row-label" for="autoTidyEnabled">
+              <span>Tidy automatically</span>
+              <small>Runs quietly across normal browser windows. The latest tidy can always be undone.</small>
+            </label>
+            <input id="autoTidyEnabled" name="autoTidyEnabled" class="switch" type="checkbox">
+          </div>
+          <div class="row">
+            <label class="row-label" for="autoTidyIntervalMinutes">
+              <span>Interval</span>
+              <small>Minutes between runs.</small>
+            </label>
+            <input id="autoTidyIntervalMinutes" name="autoTidyIntervalMinutes" class="control-number" type="number" min="1" max="1440" step="1">
+          </div>
         </section>
 
-        <footer class="autosave-bar">
-          <span class="autosave-copy">Changes save automatically</span>
-          <span id="save-status" class="save-status" aria-live="polite"></span>
-        </footer>
+        <p class="footnote">Changes save automatically.</p>
       </form>
     </main>
     <script type="module" src="dist/options.js"></script>

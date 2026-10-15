@@ -1,4 +1,4 @@
-import type { LocalCliProvider, Provider, ProviderError, ProviderErrorKind, Settings } from "./types.js";
+import type { CliAccount, LocalCliProvider, Provider, ProviderError, ProviderErrorKind, Settings } from "./types.js";
 
 interface ProviderMetadata {
   label: string;
@@ -71,10 +71,38 @@ export function getLocalCliLabel(provider: Provider | string | undefined): strin
   return provider === "local-codex-cli" ? "Codex CLI" : "Claude Code CLI";
 }
 
+const PLAN_LABELS: Record<string, string> = {
+  free: "Free",
+  go: "Go",
+  plus: "Plus",
+  pro: "Pro",
+  max: "Max",
+  team: "Team",
+  business: "Business",
+  enterprise: "Enterprise",
+  edu: "Edu"
+};
+
+// "ChatGPT Plus", "Claude Max", "API key" — the account behind a local CLI provider.
+export function formatCliAccountPlan(provider: Provider | string | undefined, account: CliAccount | undefined): string {
+  if (!account) {
+    return "";
+  }
+  if (account.authMethod === "api-key") {
+    return "API key";
+  }
+  const service = provider === "local-claude-cli" ? "Claude" : "ChatGPT";
+  if (!account.plan) {
+    return `${service} account`;
+  }
+  const plan = PLAN_LABELS[account.plan.toLowerCase()] ?? account.plan;
+  return `${service} ${plan}`;
+}
+
 const FRIENDLY_ERROR_MESSAGES_BY_KIND: Partial<Record<ProviderErrorKind, string>> = {
   "provider-timeout": "The AI provider did not finish before the model timeout. Increase Model timeout in Options or choose a faster model or reasoning level.",
   "missing-native-permission": "Native Messaging permission is missing. Open Options and grant access for the local CLI provider.",
-  "native-host-not-found": "Native bridge is not installed. Run nub run native:install.",
+  "native-host-not-found": "Native bridge is not installed. Open Settings for the install command.",
   "native-host-forbidden": "Native bridge is not allowed for this extension ID. Reinstall the native host.",
   "native-host-config-error": "Native bridge config is invalid. Reinstall the native host.",
   "cli-timeout": "The local CLI did not finish before the model timeout. Increase Model timeout in Options or choose a faster model or reasoning level."

@@ -2,6 +2,7 @@ import { Cause, Effect, Exit, Option } from "effect";
 import { createProviderError, omitUndefined } from "./provider_result.js";
 import { getProviderRequestTimeoutMs } from "./provider_timeout.js";
 import type {
+  CliAccount,
   ExistingGroup,
   LocalCliProvider,
   NativeModelInfo,
@@ -77,13 +78,14 @@ interface NativeResponse {
   models?: NativeModelInfo[];
 }
 
-interface NativeCliStatus {
+export interface NativeCliStatus {
   provider: Provider;
   configured: boolean;
   executableAvailable: boolean;
   authChecked: boolean;
   authenticated: boolean;
   lockExecutables: boolean;
+  account?: CliAccount;
 }
 
 export async function createPlanWithNativeCli(

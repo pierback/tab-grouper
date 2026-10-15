@@ -416,4 +416,65 @@ import type { NativeMessage } from "./fixtures/options.js";
   assert.equal(elements["provider-chrome-ai"].hidden, false);
 }
 
+{
+  const { elements } = await importOptions({
+    accountPanel: true,
+    nativePermissionGranted: true,
+    stored: { provider: "local-codex-cli" },
+    nativeStatus: {
+      provider: "local-codex-cli",
+      configured: true,
+      executableAvailable: true,
+      authChecked: true,
+      authenticated: true,
+      lockExecutables: true,
+      account: { authMethod: "chatgpt", plan: "plus", email: "me@example.com" }
+    }
+  });
+  await waitUntil(() => elements["cli-account"].dataset.state === "ready");
+  assert.equal(elements["cli-account-title"].textContent, "Codex CLI connected");
+  assert.equal(elements["cli-account-detail"].textContent, "ChatGPT Plus · me@example.com");
+  assert.equal(elements["cli-setup"].hidden, true);
+}
+
+{
+  const { elements } = await importOptions({
+    accountPanel: true,
+    nativePermissionGranted: true,
+    stored: { provider: "local-claude-cli" },
+    nativeStatus: {
+      provider: "local-claude-cli",
+      configured: true,
+      executableAvailable: true,
+      authChecked: true,
+      authenticated: false,
+      lockExecutables: true
+    }
+  });
+  await waitUntil(() => elements["cli-account"].dataset.state === "warning");
+  assert.equal(elements["cli-account-title"].textContent, "Claude Code CLI is not signed in");
+  assert.match(elements["cli-account-detail"].textContent, /claude auth login/);
+}
+
+{
+  const { elements } = await importOptions({
+    accountPanel: true,
+    gecko: true,
+    zenFolders: true,
+    nativePermissionGranted: true,
+    nativeHostMissing: true,
+    stored: { provider: "local-codex-cli" }
+  });
+  await waitUntil(() => elements["cli-account"].dataset.state === "error");
+  assert.equal(elements["cli-account-title"].textContent, "Local bridge not installed");
+  assert.equal(elements["cli-setup"].hidden, false);
+  assert.equal(elements["cli-setup-command"].textContent, "nub run native:install --browser zen");
+}
+
+{
+  const { elements } = await importOptions({ accountPanel: true, stored: { provider: "local-codex-cli" } });
+  await waitUntil(() => elements["cli-account"].dataset.state === "idle");
+  assert.equal(elements["cli-account-title"].textContent, "Not connected yet");
+}
+
 console.log("Options tests passed.");

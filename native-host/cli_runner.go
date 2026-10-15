@@ -26,6 +26,7 @@ type CLIRunner struct {
 	CodexExecutable  string
 	ClaudeExecutable string
 	LockExecutables  bool
+	CodexHome        string
 }
 
 func NewCLIRunner() CLIRunner {
@@ -63,6 +64,9 @@ func (runner CLIRunner) Status(ctx context.Context, request Request) (Status, er
 			Kind: "cli-timeout",
 			Err:  fmt.Errorf("%s auth status timed out", request.Provider),
 		}
+	}
+	if status.Authenticated {
+		status.Account = runner.readAccount(request.Provider, result)
 	}
 	return status, nil
 }
@@ -515,9 +519,23 @@ func usageFromClaudeEnvelope(inputTokens int, outputTokens int, totalCostUSD *fl
 	}
 }
 
+func (runner CLIRunner) readAccount(provider string, result CommandResult) *Account {
+	switch provider {
+	case "codex":
+		return readCodexAccount(runner.CodexHome)
+	case "claude":
+		return parseClaudeAccount(result.Stdout)
+	default:
+		return nil
+	}
+}
+
 func (runner CLIRunner) withDefaults() CLIRunner {
 	if runner.Commands == nil {
 		runner.Commands = ExecCommandRunner{}
+	}
+	if runner.CodexHome == "" {
+		runner.CodexHome = codexHomeDir()
 	}
 	if !runner.LockExecutables && runner.CodexExecutable == "" {
 		runner.CodexExecutable = "codex"

@@ -10,6 +10,12 @@ export type Provider =
 
 export type LocalCliProvider = "codex" | "claude";
 
+export interface CliAccount {
+  authMethod?: string;
+  plan?: string;
+  email?: string;
+}
+
 export type GroupTarget = "tab-groups" | "zen-folders";
 
 export type AppliedGroupKind = "tab-group" | "zen-folder";

@@ -9,9 +9,12 @@ import { nativeHostRuntimePaths } from "./lib/native_host_runtime.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nativeHostDir = path.join(root, "native-host");
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tab-grouper-native-e2e-"));
+const codexHome = path.join(tempDir, "codex-home");
+// Keep the host away from the real ~/.codex/auth.json.
 const daemonTestEnv = {
   TAB_GROUPER_NATIVE_HOST_IDLE_TIMEOUT_MS: "500",
-  TAB_GROUPER_NATIVE_HOST_IDLE_CHECK_INTERVAL_MS: "50"
+  TAB_GROUPER_NATIVE_HOST_IDLE_CHECK_INTERVAL_MS: "50",
+  CODEX_HOME: codexHome
 };
 let binaryPath;
 
@@ -19,6 +22,12 @@ try {
   binaryPath = path.join(tempDir, "tab-grouper-native-host");
   const fakeCodexPath = path.join(tempDir, "fake-codex.mjs");
   fs.writeFileSync(fakeCodexPath, fakeCodexSource(), { mode: 0o755 });
+  fs.mkdirSync(codexHome);
+  const idTokenClaims = Buffer.from(JSON.stringify({ email: "e2e@example.com", "https://api.openai.com/auth": { chatgpt_plan_type: "pro" } })).toString("base64url");
+  fs.writeFileSync(path.join(codexHome, "auth.json"), JSON.stringify({
+    auth_mode: "chatgpt",
+    tokens: { id_token: `e30.${idTokenClaims}.sig`, access_token: "e2e-secret" }
+  }), { mode: 0o600 });
   run("go", ["build", "-o", binaryPath, "."], nativeHostDir);
   fs.writeFileSync(
     `${binaryPath}.config.json`,
@@ -47,7 +56,8 @@ try {
     executableAvailable: true,
     authChecked: true,
     authenticated: true,
-    lockExecutables: true
+    lockExecutables: true,
+    account: { authMethod: "chatgpt", plan: "pro", email: "e2e@example.com" }
   });
 
   const response = await runNativeHost(binaryPath, {
