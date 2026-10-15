@@ -18,6 +18,7 @@ import (
 const planSchemaJSON = `{"type":"object","properties":{"groups":{"type":"array","maxItems":40,"items":{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":32},"color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"]},"tabIds":{"type":"array","minItems":1,"maxItems":300,"items":{"type":"integer"}}},"required":["name","color","tabIds"],"additionalProperties":false}},"assignments":{"type":"array","maxItems":100,"items":{"type":"object","properties":{"groupId":{"type":"integer"},"tabIds":{"type":"array","minItems":1,"maxItems":300,"items":{"type":"integer"}}},"required":["groupId","tabIds"],"additionalProperties":false}}},"required":["groups","assignments"],"additionalProperties":false}`
 const CLIStatusTimeout = 3 * time.Second
 const CLIModelsTimeout = 5 * time.Second
+const CLILoginTimeout = 5 * time.Minute
 
 var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 
@@ -27,6 +28,8 @@ type CLIRunner struct {
 	ClaudeExecutable string
 	LockExecutables  bool
 	CodexHome        string
+	// SeparateCodexHome holds the login used when a request asks for the separate account.
+	SeparateCodexHome string
 }
 
 func NewCLIRunner() CLIRunner {
@@ -50,7 +53,7 @@ func (runner CLIRunner) Status(ctx context.Context, request Request) (Status, er
 		return status, nil
 	}
 
-	spec, err := runner.buildStatusCommandSpec(request.Provider, executable)
+	spec, err := runner.buildStatusCommandSpec(request, executable)
 	if err != nil {
 		return Status{}, err
 	}
@@ -66,7 +69,7 @@ func (runner CLIRunner) Status(ctx context.Context, request Request) (Status, er
 		}
 	}
 	if status.Authenticated {
-		status.Account = runner.readAccount(request.Provider, result)
+		status.Account = runner.readAccount(request, result)
 	}
 	return status, nil
 }
@@ -86,11 +89,16 @@ func (runner CLIRunner) ListModels(ctx context.Context, request Request) ([]Mode
 		}
 	}
 
+	env, err := runner.codexEnv(request)
+	if err != nil {
+		return nil, err
+	}
 	modelsCtx, cancel := context.WithTimeout(ctx, CLIModelsTimeout)
 	defer cancel()
 	result, err := runner.Commands.Run(modelsCtx, CommandSpec{
 		Executable: runner.CodexExecutable,
 		Args:       []string{"debug", "models"},
+		Env:        env,
 	})
 	if errors.Is(modelsCtx.Err(), context.DeadlineExceeded) {
 		return nil, BridgeError{
@@ -241,11 +249,16 @@ func (runner CLIRunner) buildCommandSpec(request Request, prompt string, tempDir
 			args = append(args, "-m", request.Model)
 		}
 		args = append(args, "-")
+		env, err := runner.codexEnv(request)
+		if err != nil {
+			return CommandSpec{}, "", err
+		}
 		return CommandSpec{
 			Executable: runner.CodexExecutable,
 			Args:       args,
 			Stdin:      prompt,
 			Dir:        tempDir,
+			Env:        env,
 		}, outputPath, nil
 	case "claude":
 		if runner.ClaudeExecutable == "" {
@@ -285,12 +298,18 @@ func (runner CLIRunner) buildCommandSpec(request Request, prompt string, tempDir
 	}
 }
 
-func (runner CLIRunner) buildStatusCommandSpec(provider string, executable string) (CommandSpec, error) {
+func (runner CLIRunner) buildStatusCommandSpec(request Request, executable string) (CommandSpec, error) {
+	provider := request.Provider
 	switch provider {
 	case "codex":
+		env, err := runner.codexEnv(request)
+		if err != nil {
+			return CommandSpec{}, err
+		}
 		return CommandSpec{
 			Executable: executable,
 			Args:       []string{"login", "status"},
+			Env:        env,
 		}, nil
 	case "claude":
 		return CommandSpec{
@@ -519,10 +538,66 @@ func usageFromClaudeEnvelope(inputTokens int, outputTokens int, totalCostUSD *fl
 	}
 }
 
-func (runner CLIRunner) readAccount(provider string, result CommandResult) *Account {
-	switch provider {
+// Login runs the browser-based `codex login` for the separate account.
+func (runner CLIRunner) Login(ctx context.Context, request Request) (Status, error) {
+	return runner.runAccountCommand(ctx, request, []string{"login"}, CLILoginTimeout)
+}
+
+func (runner CLIRunner) Logout(ctx context.Context, request Request) (Status, error) {
+	return runner.runAccountCommand(ctx, request, []string{"logout"}, CLIStatusTimeout)
+}
+
+func (runner CLIRunner) runAccountCommand(ctx context.Context, request Request, args []string, timeout time.Duration) (Status, error) {
+	runner = runner.withDefaults()
+	if request.Provider != "codex" || request.Account != AccountSeparate {
+		return Status{}, BridgeError{Kind: "native-host-protocol-error", Err: errors.New("only the separate codex account can be managed")}
+	}
+	executable := runner.executableForProvider(request.Provider)
+	if executable == "" || !executableIsAvailable(executable) {
+		return Status{}, BridgeError{Kind: "cli-not-found", Err: errors.New("codex executable was not found")}
+	}
+	env, err := runner.codexEnv(request)
+	if err != nil {
+		return Status{}, err
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if _, err := runner.Commands.Run(commandCtx, CommandSpec{Executable: executable, Args: args, Env: env}); err != nil {
+		var bridgeError BridgeError
+		if errors.As(err, &bridgeError) {
+			return Status{}, err
+		}
+		return Status{}, BridgeError{Kind: "cli-error", Err: fmt.Errorf("codex %s failed", args[0])}
+	}
+	return runner.Status(ctx, request)
+}
+
+func (runner CLIRunner) codexHome(request Request) string {
+	if request.Account == AccountSeparate {
+		return runner.SeparateCodexHome
+	}
+	return runner.CodexHome
+}
+
+// codexEnv points Codex at the separate account's home; the default account inherits the environment.
+func (runner CLIRunner) codexEnv(request Request) ([]string, error) {
+	if request.Account != AccountSeparate {
+		return nil, nil
+	}
+	home := runner.SeparateCodexHome
+	if home == "" {
+		return nil, BridgeError{Kind: "native-host-config-error", Err: errors.New("separate codex home is unavailable")}
+	}
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return nil, BridgeError{Kind: "native-host-config-error", Err: fmt.Errorf("could not create separate codex home: %w", err)}
+	}
+	return []string{"CODEX_HOME=" + home}, nil
+}
+
+func (runner CLIRunner) readAccount(request Request, result CommandResult) *Account {
+	switch request.Provider {
 	case "codex":
-		return readCodexAccount(runner.CodexHome)
+		return readCodexAccount(runner.codexHome(request))
 	case "claude":
 		return parseClaudeAccount(result.Stdout)
 	default:
@@ -536,6 +611,9 @@ func (runner CLIRunner) withDefaults() CLIRunner {
 	}
 	if runner.CodexHome == "" {
 		runner.CodexHome = codexHomeDir()
+	}
+	if runner.SeparateCodexHome == "" {
+		runner.SeparateCodexHome = separateCodexHomeDir()
 	}
 	if !runner.LockExecutables && runner.CodexExecutable == "" {
 		runner.CodexExecutable = "codex"

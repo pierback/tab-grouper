@@ -18,6 +18,15 @@ type Account struct {
 
 const maxAuthFileBytes = 256 * 1024
 
+// separateCodexHomeDir keeps Tab Grouper's own Codex login apart from ~/.codex.
+func separateCodexHomeDir() string {
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(userHome, ".codex-tab-grouper")
+}
+
 func codexHomeDir() string {
 	if home := os.Getenv("CODEX_HOME"); home != "" {
 		return home

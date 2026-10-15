@@ -44,13 +44,27 @@
 
         <section class="card provider-section" data-provider-section="local-cli">
           <h2>Local CLI</h2>
+          <div id="codex-account-row" class="row" hidden>
+            <label class="row-label" for="codexAccount">
+              <span>Account</span>
+              <small>A separate account lets Tab Grouper use a different ChatGPT login than your Codex CLI.</small>
+            </label>
+            <select id="codexAccount" name="codexAccount" class="control-wide">
+              <option value="default">Same as Codex CLI</option>
+              <option value="separate">Separate Tab Grouper account</option>
+            </select>
+          </div>
           <div id="cli-account" class="account" data-state="idle">
             <span class="status-dot" aria-hidden="true"></span>
             <div class="account-copy">
               <strong id="cli-account-title">Not checked yet</strong>
               <span id="cli-account-detail"></span>
             </div>
-            <button id="test-native-bridge" class="secondary-button" type="button">Check connection</button>
+            <div class="account-actions">
+              <button id="cli-sign-in" class="primary-button compact-button" type="button" hidden>Sign in</button>
+              <button id="cli-sign-out" class="secondary-button" type="button" hidden>Sign out</button>
+              <button id="test-native-bridge" class="secondary-button" type="button">Check connection</button>
+            </div>
           </div>
           <div id="cli-setup" class="setup" hidden>
             <p>Install the local bridge from your Tab Grouper checkout, then check again:</p>

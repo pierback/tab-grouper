@@ -18,6 +18,9 @@ export interface CliAccount {
 
 export type GroupTarget = "tab-groups" | "zen-folders";
 
+// "default" uses the Codex CLI's own ~/.codex login; "separate" uses Tab Grouper's own login.
+export type CodexAccount = "default" | "separate";
+
 export type AppliedGroupKind = "tab-group" | "zen-folder";
 
 export type CostBasis = "reported" | "api-estimate";
@@ -49,6 +52,7 @@ export interface Settings {
   autoTidyIntervalMinutes: number;
   providerRequestTimeoutSeconds: number;
   groupTarget: GroupTarget;
+  codexAccount: CodexAccount;
 }
 
 export type PartialSettings = Partial<Settings> | Record<string, unknown>;

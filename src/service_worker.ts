@@ -425,6 +425,7 @@ function createPlanCacheKeyInput({
     anthropicModel: settings.anthropicModel,
     codexCliModel: settings.codexCliModel,
     codexReasoningEffort: settings.codexReasoningEffort,
+    codexAccount: settings.codexAccount,
     claudeCliModel: settings.claudeCliModel,
     claudeReasoningEffort: settings.claudeReasoningEffort,
     providerRequestTimeoutSeconds: settings.providerRequestTimeoutSeconds,

@@ -514,7 +514,8 @@ button:disabled {
 
 .row + .row,
 .note + .row,
-.inline-status + .row {
+.inline-status + .row,
+.row[hidden] + .row {
   border-top: 1px solid var(--border);
 }
 
@@ -625,6 +626,17 @@ select.control-wide {
   background: var(--surface-sunken);
 }
 
+.account-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.compact-button {
+  height: 32px;
+  padding: 0 12px;
+}
+
 .account-copy {
   display: grid;
   flex: 1;
@@ -632,11 +644,9 @@ select.control-wide {
 }
 
 .account-copy span {
-  overflow: hidden;
   color: var(--text-muted);
   font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .status-dot {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -46,6 +47,7 @@ type CommandSpec struct {
 	Args       []string
 	Stdin      string
 	Dir        string
+	Env        []string
 }
 
 type CommandResult struct {
@@ -65,6 +67,9 @@ func (ExecCommandRunner) Run(ctx context.Context, spec CommandSpec) (CommandResu
 
 	command := exec.CommandContext(ctx, spec.Executable, spec.Args...)
 	command.Dir = spec.Dir
+	if len(spec.Env) > 0 {
+		command.Env = append(os.Environ(), spec.Env...)
+	}
 	command.Stdin = strings.NewReader(spec.Stdin)
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Cancel = func() error {

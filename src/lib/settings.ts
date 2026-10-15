@@ -1,4 +1,4 @@
-import type { GroupTarget, PartialSettings, Provider, Settings } from "./types.js";
+import type { CodexAccount, GroupTarget, PartialSettings, Provider, Settings } from "./types.js";
 import {
   DEFAULT_PROVIDER_REQUEST_TIMEOUT_SECONDS,
   normalizeProviderRequestTimeoutSeconds
@@ -23,7 +23,8 @@ export const DEFAULT_SETTINGS = {
   autoTidyEnabled: false,
   autoTidyIntervalMinutes: 30,
   providerRequestTimeoutSeconds: DEFAULT_PROVIDER_REQUEST_TIMEOUT_SECONDS,
-  groupTarget: "tab-groups"
+  groupTarget: "tab-groups",
+  codexAccount: "default"
 } as const satisfies Settings;
 
 export const ALLOWED_PROVIDERS = new Set<Provider>([
@@ -36,6 +37,7 @@ export const ALLOWED_PROVIDERS = new Set<Provider>([
 ]);
 
 const ALLOWED_GROUP_TARGETS = new Set<GroupTarget>(["tab-groups", "zen-folders"]);
+const ALLOWED_CODEX_ACCOUNTS = new Set<CodexAccount>(["default", "separate"]);
 
 export async function getSettings(): Promise<Settings> {
   const stored = await chrome.storage.local.get(DEFAULT_SETTINGS);
@@ -71,7 +73,8 @@ export function publicSettingsSummary(settings: PartialSettings) {
     autoTidyEnabled: normalizedSettings.autoTidyEnabled,
     autoTidyIntervalMinutes: normalizedSettings.autoTidyIntervalMinutes,
     providerRequestTimeoutSeconds: normalizedSettings.providerRequestTimeoutSeconds,
-    groupTarget: normalizedSettings.groupTarget
+    groupTarget: normalizedSettings.groupTarget,
+    codexAccount: normalizedSettings.codexAccount
   };
 }
 
@@ -100,7 +103,8 @@ export function normalizeSettings(rawSettings: PartialSettings = {}): Settings {
     autoTidyEnabled: raw.autoTidyEnabled === true,
     autoTidyIntervalMinutes: clampNumber(raw.autoTidyIntervalMinutes, 1, 1440, DEFAULT_SETTINGS.autoTidyIntervalMinutes),
     providerRequestTimeoutSeconds: normalizeProviderRequestTimeoutSeconds(raw.providerRequestTimeoutSeconds),
-    groupTarget: ALLOWED_GROUP_TARGETS.has(raw.groupTarget) ? raw.groupTarget : DEFAULT_SETTINGS.groupTarget
+    groupTarget: ALLOWED_GROUP_TARGETS.has(raw.groupTarget) ? raw.groupTarget : DEFAULT_SETTINGS.groupTarget,
+    codexAccount: ALLOWED_CODEX_ACCOUNTS.has(raw.codexAccount) ? raw.codexAccount : DEFAULT_SETTINGS.codexAccount
   };
 }
 

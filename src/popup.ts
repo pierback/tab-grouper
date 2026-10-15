@@ -169,7 +169,7 @@ async function showCliAccount(settings: Settings): Promise<void> {
     return;
   }
   try {
-    const status = await checkNativeCliStatus(settings.provider);
+    const status = await checkNativeCliStatus(settings.provider, settings.codexAccount);
     const signedIn = status.configured && status.executableAvailable && status.authenticated;
     providerAccount.textContent = signedIn
       ? formatCliAccountPlan(settings.provider, status.account) || "Signed in"

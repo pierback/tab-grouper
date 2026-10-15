@@ -9,10 +9,14 @@ import (
 )
 
 const (
-	ProtocolVersion       = 3
+	ProtocolVersion       = 4
 	RequestPlanType       = "TAB_GROUP_PLAN_REQUEST"
 	RequestStatusType     = "NATIVE_HOST_STATUS_REQUEST"
 	RequestListModelsType = "NATIVE_HOST_LIST_MODELS_REQUEST"
+	RequestLoginType      = "NATIVE_HOST_LOGIN_REQUEST"
+	RequestLogoutType     = "NATIVE_HOST_LOGOUT_REQUEST"
+	AccountDefault        = "default"
+	AccountSeparate       = "separate"
 	RequestPingType       = "PING"
 	ResponseType          = "TAB_GROUP_PLAN_RESPONSE"
 	MaxRequestBytes       = 8 * 1024 * 1024
@@ -50,6 +54,7 @@ type Request struct {
 	Type             string          `json:"type"`
 	RequestID        string          `json:"requestId"`
 	Provider         string          `json:"provider,omitempty"`
+	Account          string          `json:"account,omitempty"`
 	Model            string          `json:"model,omitempty"`
 	ReasoningEffort  string          `json:"reasoningEffort,omitempty"`
 	TimeoutMS        int             `json:"timeoutMs,omitempty"`
@@ -172,11 +177,28 @@ func ValidateRequest(request Request) error {
 	if request.Type == RequestPingType {
 		return nil
 	}
-	if request.Type != RequestPlanType && request.Type != RequestStatusType && request.Type != RequestListModelsType {
+	switch request.Type {
+	case RequestPlanType, RequestStatusType, RequestListModelsType, RequestLoginType, RequestLogoutType:
+	default:
 		return errors.New("invalid request type")
 	}
 	if request.Provider != "codex" && request.Provider != "claude" {
 		return errors.New("invalid provider")
+	}
+	switch request.Account {
+	case "", AccountDefault:
+	case AccountSeparate:
+		if request.Provider != "codex" {
+			return errors.New("separate accounts are only supported for codex")
+		}
+	default:
+		return errors.New("invalid account")
+	}
+	if request.Type == RequestLoginType || request.Type == RequestLogoutType {
+		if request.Provider != "codex" || request.Account != AccountSeparate {
+			return errors.New("sign-in is only managed for the separate codex account")
+		}
+		return nil
 	}
 	if len(request.Model) > 80 {
 		return errors.New("invalid model")

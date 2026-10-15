@@ -52,6 +52,8 @@ assert.equal(normalized.providerRequestTimeoutSeconds, 300);
 assert.equal(normalizeSettings({ providerRequestTimeoutSeconds: 120 }).providerRequestTimeoutSeconds, 180);
 assert.equal(normalized.groupTarget, "tab-groups");
 assert.equal(normalizeSettings({ groupTarget: "zen-folders" }).groupTarget, "zen-folders");
+assert.equal(normalizeSettings({ codexAccount: "separate" }).codexAccount, "separate");
+assert.equal(normalizeSettings({ codexAccount: "/tmp/other" }).codexAccount, "default");
 
 assert.deepEqual(
   publicSettingsSummary({
@@ -80,7 +82,8 @@ assert.deepEqual(
     autoTidyEnabled: false,
     autoTidyIntervalMinutes: 30,
     providerRequestTimeoutSeconds: 180,
-    groupTarget: "tab-groups"
+    groupTarget: "tab-groups",
+    codexAccount: "default"
   }
 );
 

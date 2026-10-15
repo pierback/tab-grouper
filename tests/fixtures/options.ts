@@ -53,6 +53,10 @@ interface FakeElements {
   "cli-account-detail": FakeElement;
   "cli-setup": FakeElement;
   "cli-setup-command": FakeElement;
+  "codex-account-row": FakeElement;
+  "cli-sign-in": FakeElement;
+  "cli-sign-out": FakeElement;
+  codexAccount: FakeElement;
   "data-mode": FakeElement;
   "data-summary": FakeElement;
   "test-native-bridge": FakeElement;
@@ -185,7 +189,7 @@ function createFakeElements(accountPanel: boolean): FakeElements {
   };
   elementById["group-target-field"]!.hidden = true;
   if (accountPanel) {
-    for (const id of ["cli-account", "cli-account-title", "cli-account-detail", "cli-setup", "cli-setup-command"]) {
+    for (const id of ["cli-account", "cli-account-title", "cli-account-detail", "cli-setup", "cli-setup-command", "codex-account-row", "cli-sign-in", "cli-sign-out"]) {
       elementById[id] = createElement(id, "div");
     }
     elementById["cli-setup"]!.hidden = true;
@@ -208,7 +212,8 @@ function createFakeElements(accountPanel: boolean): FakeElements {
     ["autoTidyEnabled", "checkbox", false],
     ["autoTidyIntervalMinutes", "number", "30"],
     ["providerRequestTimeoutSeconds", "number", "120"],
-    ["groupTarget", "select", "tab-groups"]
+    ["groupTarget", "select", "tab-groups"],
+    ["codexAccount", "select", "default"]
   ];
 
   for (const [id, type, value] of fieldDefinitions) {
@@ -404,7 +409,7 @@ function createFakeChrome({
               for (const callback of messageListeners) {
                 if (message.type === "NATIVE_HOST_LIST_MODELS_REQUEST") {
                   callback({
-                    version: 3,
+                    version: 4,
                     type: "TAB_GROUP_PLAN_RESPONSE",
                     requestId: message.requestId,
                     ok: true,
@@ -414,7 +419,7 @@ function createFakeChrome({
                   continue;
                 }
                 callback({
-                  version: 3,
+                  version: 4,
                   type: "TAB_GROUP_PLAN_RESPONSE",
                   requestId: message.requestId,
                   ok: true,
