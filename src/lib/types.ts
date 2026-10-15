@@ -16,7 +16,8 @@ export interface CliAccount {
   email?: string;
 }
 
-export type GroupTarget = "tab-groups" | "zen-folders";
+// "auto" means Zen folders when the Zen experiment is present, tab groups otherwise.
+export type GroupTarget = "auto" | "tab-groups" | "zen-folders";
 
 // "default" uses the Codex CLI's own ~/.codex login; "separate" uses Tab Grouper's own login.
 export type CodexAccount = "default" | "separate";

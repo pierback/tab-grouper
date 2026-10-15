@@ -1,3 +1,5 @@
+import type { GroupTarget } from "./types.js";
+
 export interface ZenFolderCreateOptions {
   label?: string;
   collapsed?: boolean;
@@ -26,4 +28,12 @@ type ExperimentGlobal = typeof globalThis & {
 
 export function getZenFoldersApi(): ZenFoldersApi | null {
   return (globalThis as ExperimentGlobal).browser?.zenFolders ?? null;
+}
+
+// Zen disables Firefox's own tab groups, so folders are the default there.
+export function resolveGroupTarget(groupTarget: GroupTarget): Exclude<GroupTarget, "auto"> {
+  if (groupTarget !== "auto") {
+    return groupTarget;
+  }
+  return getZenFoldersApi() ? "zen-folders" : "tab-groups";
 }

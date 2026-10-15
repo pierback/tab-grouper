@@ -22,7 +22,7 @@ import {
   createUndoPlan,
   isUsableSnapshot
 } from "./lib/undo.js";
-import { getZenFoldersApi } from "./lib/zen_folders.js";
+import { getZenFoldersApi, resolveGroupTarget } from "./lib/zen_folders.js";
 import type { PageHint } from "./lib/hint_cache.js";
 import type { PlanCacheEntry } from "./lib/plan_cache.js";
 import type {
@@ -274,7 +274,7 @@ async function tidyCurrentWindow(windowId: number, grantedHintOrigins: string[] 
 }
 
 async function createPlannedGroup(group: PlanGroup, settings: Settings): Promise<AppliedGroup> {
-  const zenFolders = settings.groupTarget === "zen-folders" ? getZenFoldersApi() : null;
+  const zenFolders = resolveGroupTarget(settings.groupTarget) === "zen-folders" ? getZenFoldersApi() : null;
   if (zenFolders) {
     const folder = await retryChromeTabMutation(() =>
       zenFolders.create(group.tabIds, { label: group.name, collapsed: true })

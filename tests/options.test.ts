@@ -399,16 +399,17 @@ import type { NativeMessage } from "./fixtures/options.js";
   elements.groupTarget.value = "zen-folders";
   await elements.groupTarget.dispatch("change");
   await waitUntil(() => elements["save-status"].textContent === "Saved");
-  assert.equal(chrome.__state.storage.groupTarget, "tab-groups");
+  assert.equal(chrome.__state.storage.groupTarget, "auto");
 }
 
 {
   const { elements, chrome } = await importOptions({ gecko: true, zenFolders: true });
   assert.equal(elements["group-target-field"].hidden, false);
   assert.equal(elements["provider-chrome-ai"].hidden, true);
-  elements.groupTarget.value = "zen-folders";
+  assert.equal(elements.groupTarget.value, "zen-folders");
+  elements.groupTarget.value = "tab-groups";
   await elements.groupTarget.dispatch("change");
-  await waitUntil(() => chrome.__state.storage.groupTarget === "zen-folders");
+  await waitUntil(() => chrome.__state.storage.groupTarget === "tab-groups");
 }
 
 {

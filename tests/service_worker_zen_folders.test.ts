@@ -58,9 +58,24 @@ await test("falls back to tab groups when the Zen folders experiment is unavaila
   assert.equal(findStateTab(chrome, 1).pinned, false);
 });
 
-await test("keeps creating tab groups in Zen unless folders are selected", async () => {
+await test("creates Zen folders by default when the experiment is available", async () => {
   const chrome = createFakeChrome({
     tabs: codexTabs,
+    zenFolders: true
+  });
+  await importServiceWorker(chrome);
+
+  const tidy = await sendRuntimeMessage(chrome, { type: "TIDY_CURRENT_WINDOW", windowId: 1 });
+  assert.equal(tidy.ok, true);
+  const folder = chrome.__state.groups.get(findStateTab(chrome, 1).groupId);
+  assert.equal(folder?.isZenFolder, true);
+  assert.equal(findStateTab(chrome, 1).pinned, true);
+});
+
+await test("creates Firefox tab groups in Zen when explicitly selected", async () => {
+  const chrome = createFakeChrome({
+    tabs: codexTabs,
+    storage: { groupTarget: "tab-groups" },
     zenFolders: true
   });
   await importServiceWorker(chrome);

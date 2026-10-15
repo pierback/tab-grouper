@@ -23,7 +23,7 @@ export const DEFAULT_SETTINGS = {
   autoTidyEnabled: false,
   autoTidyIntervalMinutes: 30,
   providerRequestTimeoutSeconds: DEFAULT_PROVIDER_REQUEST_TIMEOUT_SECONDS,
-  groupTarget: "tab-groups",
+  groupTarget: "auto",
   codexAccount: "default"
 } as const satisfies Settings;
 
@@ -36,7 +36,7 @@ export const ALLOWED_PROVIDERS = new Set<Provider>([
   "anthropic"
 ]);
 
-const ALLOWED_GROUP_TARGETS = new Set<GroupTarget>(["tab-groups", "zen-folders"]);
+const ALLOWED_GROUP_TARGETS = new Set<GroupTarget>(["auto", "tab-groups", "zen-folders"]);
 const ALLOWED_CODEX_ACCOUNTS = new Set<CodexAccount>(["default", "separate"]);
 
 export async function getSettings(): Promise<Settings> {

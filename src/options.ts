@@ -18,7 +18,7 @@ import {
   isLocalCliProvider
 } from "./lib/provider_metadata.js";
 import { isGeckoExtensionRuntime } from "./lib/platform.js";
-import { getZenFoldersApi } from "./lib/zen_folders.js";
+import { getZenFoldersApi, resolveGroupTarget } from "./lib/zen_folders.js";
 import type { NativeModelInfo, PartialSettings, Provider, ProviderError, Settings } from "./lib/types.js";
 
 const form = document.querySelector<HTMLFormElement>("#settings-form")!;
@@ -204,6 +204,9 @@ async function initOptions() {
   }
   if (groupTargetField) {
     groupTargetField.hidden = !zenFoldersAvailable;
+  }
+  if (groupTargetSelect) {
+    groupTargetSelect.value = resolveGroupTarget(settings.groupTarget);
   }
   if (chromeAiProviderOption) {
     chromeAiProviderOption.hidden = isGeckoExtensionRuntime() && settings.provider !== "chrome-ai";
