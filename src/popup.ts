@@ -1,4 +1,11 @@
-import { getAllProviderOrigins, getFriendlyProviderErrorMessage, getProviderLabel } from "./lib/provider_metadata.js";
+import { checkNativeCliStatus } from "./lib/native_cli_provider.js";
+import {
+  formatCliAccountPlan,
+  getAllProviderOrigins,
+  getFriendlyProviderErrorMessage,
+  getProviderLabel,
+  isLocalCliProvider
+} from "./lib/provider_metadata.js";
 import { pageHintPermissionPatternsForTabs, shouldUsePageHints } from "./lib/page_hints.js";
 import { normalizeSettings } from "./lib/settings.js";
 import { isGroupableTab } from "./lib/tabs.js";
@@ -8,6 +15,7 @@ const tidyButton = document.querySelector<HTMLButtonElement>("#tidy-button")!;
 const result = document.querySelector<HTMLElement>("#result")!;
 const providerLabel = document.querySelector<HTMLElement>("#provider-label")!;
 const providerMeta = document.querySelector<HTMLElement>("#provider-meta")!;
+const providerAccount = document.querySelector<HTMLElement>("#provider-account");
 const tabCount = document.querySelector<HTMLElement>("#tab-count")!;
 const autoTidyStatus = document.querySelector<HTMLElement>("#auto-tidy-status")!;
 const optionsButton = document.querySelector<HTMLButtonElement>("#open-options")!;
@@ -146,6 +154,7 @@ async function initPopup() {
       ? `Every ${formatMinuteInterval(settings.autoTidyIntervalMinutes)}`
       : "Off";
     updateUndoButton(Boolean(status?.undoAvailable));
+    void showCliAccount(settings);
   } catch (error) {
     providerLabel.textContent = "Unavailable";
     providerMeta.textContent = "";
@@ -153,6 +162,26 @@ async function initPopup() {
     autoTidyStatus.textContent = "-";
     renderError(error instanceof Error ? error.message : String(error));
   }
+}
+
+async function showCliAccount(settings: Settings): Promise<void> {
+  if (!providerAccount || !isLocalCliProvider(settings.provider)) {
+    return;
+  }
+  try {
+    const status = await checkNativeCliStatus(settings.provider, settings.codexAccount);
+    const signedIn = status.configured && status.executableAvailable && status.authenticated;
+    providerAccount.textContent = signedIn
+      ? formatCliAccountPlan(settings.provider, status.account) || "Signed in"
+      : "Not signed in";
+    providerAccount.title = status.account?.email || "";
+    providerAccount.classList.toggle("badge-warn", !signedIn);
+  } catch {
+    providerAccount.textContent = "Bridge offline";
+    providerAccount.title = "Open settings to set up the local bridge.";
+    providerAccount.classList.add("badge-warn");
+  }
+  providerAccount.hidden = false;
 }
 
 function setBusy(isBusy: boolean, action = "tidy"): void {
@@ -187,7 +216,7 @@ function renderResult(response: PopupResponse, elapsedMs: number): void {
   }
   for (const assignment of response.assignments || []) {
     const item = document.createElement("li");
-    item.innerHTML = `<span class="assignment-marker">+${assignment.count}</span><span>-&gt; ${escapeHtml(assignment.title || `Group ${assignment.groupId}`)}</span>`;
+    item.innerHTML = `<span class="assignment-marker">+${assignment.count}</span><span>→ ${escapeHtml(assignment.title || `Group ${assignment.groupId}`)}</span>`;
     list.append(item);
   }
   result.append(list);
@@ -261,10 +290,6 @@ function buildProviderDetailsHtml(response: PopupResponse): string {
       `Actual provider: <strong>${escapeHtml(actualProvider)}</strong>.`,
       `Provider error: ${escapeHtml(providerError)}`
     ].join(" ");
-  }
-
-  if (response.provider && response.provider !== "heuristic") {
-    return `AI provider: <strong>${escapeHtml(getProviderLabel(response.provider))}</strong>.`;
   }
 
   return "";

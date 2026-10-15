@@ -291,7 +291,7 @@ function flushAsyncWork() {
   await elements["preview-button"].dispatch("click");
   assert.equal(elements.result.children.length, 3);
   assert.match(elements.result.children[2]!.children[0]!.innerHTML, /\+2/);
-  assert.match(elements.result.children[2]!.children[0]!.innerHTML, /-&gt; Berlin &lt;Trip&gt;/);
+  assert.match(elements.result.children[2]!.children[0]!.innerHTML, /→ Berlin &lt;Trip&gt;/);
 }
 
 {
@@ -329,7 +329,7 @@ function flushAsyncWork() {
   });
 
   await elements["preview-button"].dispatch("click");
-  assert.equal(elements.result.children[2]!.innerHTML, "AI provider: <strong>OpenAI API</strong>.");
+  assert.equal(elements.result.children[2]!.className, "group-list");
 }
 
 {
@@ -358,7 +358,7 @@ function flushAsyncWork() {
   assert.equal(stats.children[1]!.children[2]!.textContent, "100 in · 23 out");
   assert.equal(stats.children[2]!.children[1]!.textContent, "$0.0043");
   assert.equal(stats.children[2]!.children[2]!.textContent, "Provider reported");
-  assert.equal(elements.result.children[2]!.innerHTML, "AI provider: <strong>Local Claude Code CLI</strong>.");
+  assert.equal(elements.result.children[2]!.className, "group-list");
 }
 
 {

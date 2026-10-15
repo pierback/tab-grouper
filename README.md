@@ -1,6 +1,6 @@
 # Tab Grouper
 
-Chrome MV3 extension inspired by Arc's tidy tabs flow. Click **Tidy tabs** and the extension groups the current window's tabs with local heuristics or, when configured, a local Codex CLI / Claude Code CLI bridge.
+MV3 extension for Chrome, Firefox, and Zen inspired by Arc's tidy tabs flow. Click **Tidy tabs** and the extension groups the current window's tabs with local heuristics or, when configured, a local Codex CLI / Claude Code CLI bridge.
 
 ## Status
 
@@ -20,6 +20,28 @@ The extension is written in TypeScript and needs a one-time build before loading
 
 The default provider is `Local heuristic`, so the extension works without an API key.
 
+## Firefox and Zen
+
+Firefox 142+ and Zen are built from the same sources into self-contained packages:
+
+```sh
+nub run build:firefox   # build/firefox — native tab groups
+nub run build:zen       # build/zen — adds the Zen folders experiment
+```
+
+Load `build/firefox` or `build/zen` from `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on**, or run `nub run zen` to start Zen on a throwaway profile with the Zen build installed. Both builds use the extension ID `tab-grouper@fabianpieringer`. The Chrome built-in AI provider is hidden there.
+
+### Zen folders
+
+The Zen build ships a privileged [WebExtension Experiment](https://firefox-source-docs.mozilla.org/toolkit/components/extensions/webextensions/basics.html) (`experiments/zen_folders/`) that calls Zen's own `gZenFolders.createFolder`. With it, Options shows **Create groups as → Zen folders**. Only folder creation and removal need the experiment; assigning, renaming, collapsing, and ungrouping go through the standard `tabs`/`tabGroups` APIs, which treat folders as tab groups.
+
+Things to know:
+
+- Zen folders live in the pinned section, so tidied tabs become pinned. Undo unpins them again and removes the folders tidy created once they are empty.
+- Extensions only see the active Zen workspace, so tidy and its folders stay within that workspace.
+- The experiment relies on Zen internals and may break with Zen updates.
+- Experiments cannot be signed by AMO. A permanent install needs `extensions.experiments.enabled=true` and `xpinstall.signatures.required=false` in `about:config`, which also lets any unsigned add-on install. `build/firefox` has no experiment and passes `nub run lint:firefox`.
+
 ## Local CLI bridge
 
 To use `Local Codex CLI` or `Local Claude Code CLI`, install the native host after loading the unpacked extension:
@@ -36,7 +58,7 @@ To install the shared native host for every supported Chromium browser in one st
 nub run native:install --browser all
 ```
 
-To target only one browser, pass `--browser chrome`, `--browser brave`, `--browser edge`, `--browser chromium`, `--browser chrome-canary`, or `--browser helium` (Helium path unverified).
+To target only one browser, pass `--browser chrome`, `--browser brave`, `--browser edge`, `--browser chromium`, `--browser chrome-canary`, `--browser helium` (Helium path unverified), `--browser firefox`, or `--browser zen`. Zen reads Firefox's `~/Library/Application Support/Mozilla/NativeMessagingHosts`, so both Gecko targets write the same manifest, allowing `tab-grouper@fabianpieringer`.
 
 The installer also writes a locked native-host config beside the built binary with the discovered `codex` and `claude` executable paths. If either CLI is installed somewhere unusual, pass explicit paths:
 
@@ -108,6 +130,15 @@ nub run smoke:chrome
 ```
 
 The smoke test opens a temporary Chrome profile, loads a temporary unpacked copy of this extension through Chrome DevTools Protocol, verifies heuristic tidy/undo, installs a temporary Native Messaging host with a fake pinned Codex executable, verifies local Codex provider tidy/undo with superficial page hints, then restores the Chrome native-host manifest. Set `CHROME_PATH` if Chrome is installed somewhere other than `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`.
+
+## Firefox and Zen smoke tests
+
+```sh
+nub run smoke:firefox
+nub run smoke:zen
+```
+
+Each run starts the browser headless on a throwaway profile with the matching build, installs a temporary Native Messaging host with a fake Codex executable, tidies fixture tabs through the local Codex provider with `groupTarget: "zen-folders"`, undoes, and restores the native-host manifest. Zen must create a folder with pinned tabs; Firefox must fall back to a tab group. Set `GECKO_SMOKE_HEADED=1` to watch, or `ZEN_PATH` / `FIREFOX_PATH` for other install locations.
 
 ## License
 

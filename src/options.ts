@@ -1,6 +1,13 @@
 import { DEFAULT_SETTINGS, getSettings, normalizeSettings, saveSettings } from "./lib/settings.js";
-import { checkNativeCliStatus, listNativeModels } from "./lib/native_cli_provider.js";
 import {
+  checkNativeCliStatus,
+  listNativeModels,
+  signInSeparateCodexAccount,
+  signOutSeparateCodexAccount
+} from "./lib/native_cli_provider.js";
+import type { NativeCliStatus } from "./lib/native_cli_provider.js";
+import {
+  formatCliAccountPlan,
   getAllProviderOrigins,
   getAllProviderPermissions,
   getFriendlyProviderErrorMessage,
@@ -10,7 +17,9 @@ import {
   getProviderPermissions,
   isLocalCliProvider
 } from "./lib/provider_metadata.js";
-import type { NativeModelInfo, PartialSettings, Provider, Settings } from "./lib/types.js";
+import { isGeckoExtensionRuntime } from "./lib/platform.js";
+import { getZenFoldersApi, resolveGroupTarget } from "./lib/zen_folders.js";
+import type { NativeModelInfo, PartialSettings, Provider, ProviderError, Settings } from "./lib/types.js";
 
 const form = document.querySelector<HTMLFormElement>("#settings-form")!;
 const saveStatus = document.querySelector<HTMLElement>("#save-status")!;
@@ -26,6 +35,26 @@ const reasoningSelect = document.querySelector<HTMLSelectElement>("#reasoning")!
 const autoTidyEnabledInput = document.querySelector<HTMLInputElement>("#autoTidyEnabled")!;
 const autoTidyIntervalInput = document.querySelector<HTMLInputElement>("#autoTidyIntervalMinutes")!;
 const providerTimeoutInput = document.querySelector<HTMLInputElement>("#providerRequestTimeoutSeconds")!;
+const groupTargetField = document.querySelector<HTMLElement>("#group-target-field");
+const groupTargetSelect = document.querySelector<HTMLSelectElement>("#groupTarget");
+const chromeAiProviderOption = document.querySelector<HTMLOptionElement>("#provider-chrome-ai");
+const zenFoldersAvailable = getZenFoldersApi() !== null;
+const cliAccount = document.querySelector<HTMLElement>("#cli-account");
+const cliAccountTitle = document.querySelector<HTMLElement>("#cli-account-title");
+const cliAccountDetail = document.querySelector<HTMLElement>("#cli-account-detail");
+const cliSetup = document.querySelector<HTMLElement>("#cli-setup");
+const cliSetupCommand = document.querySelector<HTMLElement>("#cli-setup-command");
+const codexAccountRow = document.querySelector<HTMLElement>("#codex-account-row");
+const codexAccountSelect = document.querySelector<HTMLSelectElement>("#codexAccount");
+const cliSignInButton = document.querySelector<HTMLButtonElement>("#cli-sign-in");
+const cliSignOutButton = document.querySelector<HTMLButtonElement>("#cli-sign-out");
+
+type CliAccountState =
+  | { kind: "checking" }
+  | { kind: "signing-in" }
+  | { kind: "needs-permission" }
+  | { kind: "status"; status: NativeCliStatus }
+  | { kind: "error"; error: unknown };
 
 const CLAUDE_MODEL_OPTIONS: NativeModelInfo[] = [
   { slug: "claude-fable-5", displayName: "Fable 5" },
@@ -44,6 +73,7 @@ let bridgeCheck: { provider: Provider } | undefined;
 let providerControlLocks = 0;
 let saveQueue: Promise<unknown> = Promise.resolve();
 let autoSaveTimer: number | undefined;
+let cliAccountSequence = 0;
 
 initOptions();
 
@@ -83,6 +113,7 @@ providerSelect.addEventListener("change", async () => {
   } else if (didSave) {
     showSaveCompletion(savedSettings);
   }
+  void autoCheckCliAccount(draftSettings.provider);
   await refreshLocalCliControls(draftSettings.provider, draftSettings);
 });
 
@@ -106,6 +137,24 @@ includeFullUrlsInput.addEventListener("change", () => {
 
 includePageHintsInput?.addEventListener("change", () => {
   updateDataScope();
+  void persistCurrentForm();
+});
+
+codexAccountSelect?.addEventListener("change", async () => {
+  await persistCurrentForm();
+  void autoCheckCliAccount(draftSettings.provider);
+  await refreshLocalCliControls(draftSettings.provider, draftSettings);
+});
+
+cliSignInButton?.addEventListener("click", async () => {
+  await runSeparateAccountAction(signInSeparateCodexAccount, "signing-in");
+});
+
+cliSignOutButton?.addEventListener("click", async () => {
+  await runSeparateAccountAction(signOutSeparateCodexAccount, "checking");
+});
+
+groupTargetSelect?.addEventListener("change", () => {
   void persistCurrentForm();
 });
 
@@ -153,7 +202,17 @@ async function initOptions() {
       input.value = value;
     }
   }
+  if (groupTargetField) {
+    groupTargetField.hidden = !zenFoldersAvailable;
+  }
+  if (groupTargetSelect) {
+    groupTargetSelect.value = resolveGroupTarget(settings.groupTarget);
+  }
+  if (chromeAiProviderOption) {
+    chromeAiProviderOption.hidden = isGeckoExtensionRuntime() && settings.provider !== "chrome-ai";
+  }
   updateProviderSections(settings.provider);
+  void autoCheckCliAccount(settings.provider);
   await refreshLocalCliControls(settings.provider, settings);
   updateDataScope();
   updateAutoTidyControls();
@@ -258,6 +317,9 @@ function updateProviderControls(): void {
 }
 
 function updateProviderSections(provider: string): void {
+  if (codexAccountRow) {
+    codexAccountRow.hidden = provider !== "local-codex-cli";
+  }
   for (const section of document.querySelectorAll("[data-provider-section]")) {
     const providerSection = section as HTMLElement;
     providerSection.hidden = providerSection.dataset.providerSection !== provider &&
@@ -297,7 +359,9 @@ function readFormSettings(): PartialSettings {
     minimumGroupSize: Number(formData.get("minimumGroupSize")),
     autoTidyEnabled: autoTidyEnabledInput.checked,
     autoTidyIntervalMinutes: Number(autoTidyIntervalInput.value),
-    providerRequestTimeoutSeconds: Number(providerTimeoutInput.value)
+    providerRequestTimeoutSeconds: Number(providerTimeoutInput.value),
+    groupTarget: zenFoldersAvailable && groupTargetSelect ? groupTargetSelect.value : draftSettings.groupTarget,
+    codexAccount: codexAccountSelect ? codexAccountSelect.value : draftSettings.codexAccount
   };
 }
 
@@ -333,7 +397,7 @@ async function refreshLocalCliControls(provider: Provider, settings: Settings): 
   }
 
   try {
-    const models = await listNativeModels("codex");
+    const models = await listNativeModels("codex", settings.codexAccount);
     if (sequence !== localCliControlSequence) {
       return false;
     }
@@ -483,6 +547,8 @@ async function testNativeBridge() {
   const isCurrent = () => bridgeCheck === check;
   updateProviderControls();
   setNativeBridgeStatus("Checking...", false);
+  const accountSequence = ++cliAccountSequence;
+  renderCliAccount(provider, { kind: "checking" });
   try {
     const unlockProviderControls = lockProviderControls();
     try {
@@ -493,9 +559,12 @@ async function testNativeBridge() {
     if (!isCurrent()) {
       return;
     }
-    const status = await checkNativeCliStatus(provider);
+    const status = await checkNativeCliStatus(provider, draftSettings.codexAccount);
     if (!isCurrent()) {
       return;
+    }
+    if (accountSequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "status", status });
     }
     if (status.configured && status.executableAvailable && status.authenticated) {
       if (provider === "local-codex-cli") {
@@ -528,12 +597,139 @@ async function testNativeBridge() {
     if (isCurrent()) {
       setNativeBridgeStatus(getFriendlyProviderErrorMessage(error), true);
     }
+    if (accountSequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "error", error });
+    }
   } finally {
     if (isCurrent()) {
       bridgeCheck = undefined;
       updateProviderControls();
     }
   }
+}
+
+async function autoCheckCliAccount(provider: Provider): Promise<void> {
+  if (!cliAccount || !isLocalCliProvider(provider) || bridgeCheck !== undefined) {
+    return;
+  }
+  const sequence = ++cliAccountSequence;
+  if (!(await hasNativeMessagingPermission())) {
+    if (sequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "needs-permission" });
+    }
+    return;
+  }
+  renderCliAccount(provider, { kind: "checking" });
+  try {
+    const status = await checkNativeCliStatus(provider, draftSettings.codexAccount);
+    if (sequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "status", status });
+    }
+  } catch (error) {
+    if (sequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "error", error });
+    }
+  }
+}
+
+async function runSeparateAccountAction(action: () => Promise<NativeCliStatus>, pendingKind: "signing-in" | "checking"): Promise<void> {
+  const provider = draftSettings.provider;
+  const sequence = ++cliAccountSequence;
+  renderCliAccount(provider, { kind: pendingKind });
+  try {
+    const status = await action();
+    if (sequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "status", status });
+    }
+    await refreshLocalCliControls(draftSettings.provider, draftSettings);
+  } catch (error) {
+    if (sequence === cliAccountSequence) {
+      renderCliAccount(provider, { kind: "error", error });
+    }
+  }
+}
+
+function usesSeparateCodexAccount(provider: Provider): boolean {
+  return provider === "local-codex-cli" && draftSettings.codexAccount === "separate";
+}
+
+function renderCliAccount(provider: Provider, state: CliAccountState): void {
+  if (!cliAccount || !cliAccountTitle || !cliAccountDetail) {
+    return;
+  }
+  const label = getLocalCliLabel(provider);
+  const separate = usesSeparateCodexAccount(provider);
+  const view = describeCliAccount(provider, separate ? "Tab Grouper account" : label, state, separate);
+  const busy = state.kind === "checking" || state.kind === "signing-in";
+  const signedIn = state.kind === "status" && state.status.authenticated;
+  if (cliSignInButton) {
+    cliSignInButton.hidden = !separate || busy || view.showSetup;
+    cliSignInButton.textContent = signedIn ? "Switch account" : "Sign in";
+  }
+  if (cliSignOutButton) {
+    cliSignOutButton.hidden = !separate || busy || !signedIn;
+  }
+  cliAccount.dataset.state = view.state;
+  cliAccountTitle.textContent = view.title;
+  cliAccountDetail.textContent = view.detail;
+  if (cliSetup && cliSetupCommand) {
+    cliSetup.hidden = !view.showSetup;
+    cliSetupCommand.textContent = getNativeInstallCommand();
+  }
+}
+
+function describeCliAccount(provider: Provider, label: string, state: CliAccountState, separate: boolean) {
+  switch (state.kind) {
+    case "checking":
+      return { state: "checking", title: `Checking ${label}…`, detail: "", showSetup: false };
+    case "signing-in":
+      return { state: "checking", title: "Waiting for sign-in…", detail: "Finish signing in with the ChatGPT account you want in the browser tab that just opened.", showSetup: false };
+    case "needs-permission":
+      return { state: "idle", title: "Not connected yet", detail: "Check the connection to allow the browser to talk to the local bridge.", showSetup: false };
+    case "error": {
+      const providerError = state.error as ProviderError | undefined;
+      const kind = providerError?.providerErrorKind;
+      const notInstalled = kind === "native-host-not-found" || kind === "native-host-forbidden";
+      const outdated = kind === "native-host-protocol-error" && /outdated|does not match/i.test(providerError?.message || "");
+      return {
+        state: "error",
+        title: notInstalled ? "Local bridge not installed" : outdated ? "Local bridge needs an update" : "Bridge check failed",
+        detail: notInstalled ? `Needed to reach the ${label}.` : outdated ? "Reinstall it to use this version of Tab Grouper." : getFriendlyProviderErrorMessage(state.error),
+        showSetup: notInstalled || outdated || kind === "native-host-config-error"
+      };
+    }
+    case "status": {
+      const { status } = state;
+      if (!status.configured || !status.executableAvailable) {
+        return { state: "error", title: `${label} not found`, detail: "Install the CLI, then reinstall the bridge so it picks up the path.", showSetup: true };
+      }
+      if (!status.authChecked) {
+        return { state: "warning", title: `${label} found`, detail: "Sign-in could not be verified.", showSetup: false };
+      }
+      if (!status.authenticated && separate) {
+        return { state: "warning", title: "Tab Grouper account not signed in", detail: "Sign in with the ChatGPT account Tab Grouper should use. Your Codex CLI login stays as it is.", showSetup: false };
+      }
+      if (!status.authenticated) {
+        const loginCommand = provider === "local-claude-cli" ? "claude auth login" : "codex login";
+        return { state: "warning", title: `${label} is not signed in`, detail: `Run \`${loginCommand}\` in a terminal, then check again.`, showSetup: false };
+      }
+      const plan = formatCliAccountPlan(provider, status.account);
+      const detail = [plan, status.account?.email].filter(Boolean).join(" · ");
+      return {
+        state: "ready",
+        title: separate ? "Tab Grouper account connected" : `${label} connected`,
+        detail: detail || "Signed in. Reinstall the bridge to see which plan is used.",
+        showSetup: false
+      };
+    }
+  }
+}
+
+function getNativeInstallCommand(): string {
+  if (!isGeckoExtensionRuntime()) {
+    return "nub run native:install";
+  }
+  return `nub run native:install --browser ${zenFoldersAvailable ? "zen" : "firefox"}`;
 }
 
 async function removeUnusedProviderPermissions(provider: string): Promise<void> {

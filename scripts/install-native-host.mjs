@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extensionIdFromManifestKey } from "./lib/extension_id.mjs";
+import { GECKO_EXTENSION_ID } from "./lib/gecko_manifest.mjs";
 import { resolveBrowserManifestTargets } from "./lib/native_host_browsers.mjs";
 import { nativeHostRuntimePaths } from "./lib/native_host_runtime.mjs";
 
@@ -19,17 +20,17 @@ if (args.help) {
   process.exit(0);
 }
 
-const extensionId = args["extension-id"] || readExtensionIdFromManifest(root);
-
-if (!/^[a-p]{32}$/.test(extensionId)) {
-  throw new Error("Extension ID must be the 32-character Chrome extension ID from chrome://extensions.");
-}
-
 if (process.platform !== "darwin") {
-  throw new Error("This installer currently supports macOS Chrome-family browsers only.");
+  throw new Error("This installer currently supports macOS only.");
 }
 
 const browserTargets = resolveBrowserManifestTargets(browser);
+const needsChromiumExtensionId = browserTargets.some((target) => target.family === "chromium");
+const extensionId = needsChromiumExtensionId ? args["extension-id"] || readExtensionIdFromManifest(root) : "";
+
+if (needsChromiumExtensionId && !/^[a-p]{32}$/.test(extensionId)) {
+  throw new Error("Extension ID must be the 32-character Chrome extension ID from chrome://extensions.");
+}
 
 const nativeHostDir = path.join(root, "native-host");
 const binaryDir = path.join(nativeHostDir, "bin");
@@ -54,13 +55,16 @@ fs.writeFileSync(
 );
 const daemonRestartResult = restartNativeHostDaemon(binaryPath);
 
-const manifestContents = `${JSON.stringify({
+const nativeHostManifest = {
   name: NATIVE_HOST_NAME,
   description: "Tab Grouper local Codex/Claude CLI bridge",
   path: binaryPath,
-  type: "stdio",
-  allowed_origins: [`chrome-extension://${extensionId}/`]
-}, null, 2)}\n`;
+  type: "stdio"
+};
+const manifestContentsByFamily = {
+  chromium: `${JSON.stringify({ ...nativeHostManifest, allowed_origins: [`chrome-extension://${extensionId}/`] }, null, 2)}\n`,
+  gecko: `${JSON.stringify({ ...nativeHostManifest, allowed_extensions: [GECKO_EXTENSION_ID] }, null, 2)}\n`
+};
 const installedManifests = browserTargets.map((target) => {
   const manifestDir = path.join(
     os.homedir(),
@@ -71,7 +75,7 @@ const installedManifests = browserTargets.map((target) => {
   );
   const manifestPath = path.join(manifestDir, `${NATIVE_HOST_NAME}.json`);
   fs.mkdirSync(manifestDir, { recursive: true });
-  fs.writeFileSync(manifestPath, manifestContents, { mode: 0o644 });
+  fs.writeFileSync(manifestPath, manifestContentsByFamily[target.family], { mode: 0o644 });
   return { ...target, manifestPath };
 });
 
@@ -204,10 +208,12 @@ function printUsage() {
   nub run native:install
   nub run native:install --browser all
   nub run native:install --browser brave
+  nub run native:install --browser zen
   nub run native:install --codex-path /path/to/codex --claude-path /path/to/claude
   nub run native:install --extension-id <chrome-extension-id>
 
 By default the installer derives the extension ID from manifest.json's key field.
-Pass --browser all to install for Chrome, Brave, Edge, Chromium, Chrome Canary, and Helium.
-Pass --extension-id to override it for another loaded extension.`);
+Pass --browser all to install for Chrome, Brave, Edge, Chromium, Chrome Canary, Helium, Firefox, and Zen.
+Firefox and Zen manifests allow the extension ID ${GECKO_EXTENSION_ID}.
+Pass --extension-id to override the Chrome extension ID for another loaded extension.`);
 }

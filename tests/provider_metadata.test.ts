@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  formatCliAccountPlan,
   getAllProviderOrigins,
   getAllProviderPermissions,
   getFriendlyProviderErrorMessage,
@@ -18,7 +19,7 @@ assert.deepEqual(
   getProviderDataScope({ provider: "heuristic", includeFullUrls: false }),
   {
     dataMode: "On-device",
-    dataSummary: "Tab titles and URLs stay in Chrome."
+    dataSummary: "Tab titles and URLs stay in your browser."
   }
 );
 
@@ -71,7 +72,7 @@ assert.equal(
 );
 assert.equal(
   getFriendlyProviderErrorMessage({ providerErrorKind: "native-host-not-found" }),
-  "Native bridge is not installed. Run nub run native:install."
+  "Native bridge is not installed. Open Settings for the install command."
 );
 assert.equal(
   getFriendlyProviderErrorMessage({ providerErrorKind: "cli-timeout", message: "/opt/homebrew/bin/codex timed out" }),
@@ -82,5 +83,12 @@ assert.equal(
   "raw detail"
 );
 assert.equal(getFriendlyProviderErrorMessage({}), "Native bridge check failed.");
+
+assert.equal(formatCliAccountPlan("local-codex-cli", { authMethod: "chatgpt", plan: "plus" }), "ChatGPT Plus");
+assert.equal(formatCliAccountPlan("local-claude-cli", { authMethod: "claude.ai", plan: "max" }), "Claude Max");
+assert.equal(formatCliAccountPlan("local-codex-cli", { authMethod: "api-key" }), "API key");
+assert.equal(formatCliAccountPlan("local-codex-cli", { authMethod: "chatgpt" }), "ChatGPT account");
+assert.equal(formatCliAccountPlan("local-codex-cli", { plan: "prolite" }), "ChatGPT prolite");
+assert.equal(formatCliAccountPlan("local-codex-cli", undefined), "");
 
 console.log("Provider metadata tests passed.");

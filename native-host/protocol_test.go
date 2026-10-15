@@ -24,7 +24,7 @@ func TestNativeMessageRoundTrip(t *testing.T) {
 		t.Fatalf("missing size prefix")
 	}
 	payload := buffer.Bytes()
-	if !bytes.Contains(payload, []byte(`"version":3`)) {
+	if !bytes.Contains(payload, []byte(`"version":4`)) {
 		t.Fatalf("payload did not include current protocol version: %s", string(payload))
 	}
 	if !bytes.Contains(payload, []byte(`"requestId":"req-1"`)) {

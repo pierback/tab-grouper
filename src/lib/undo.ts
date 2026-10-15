@@ -53,6 +53,7 @@ export function createTidySnapshot({
       .map((tab) => ({
         id: tab.id as number,
         groupId: typeof tab.groupId === "number" && Number.isInteger(tab.groupId) ? tab.groupId : NO_GROUP_ID,
+        pinned: Boolean(tab.pinned),
         windowId: tab.windowId,
         index: tab.index
       })),
@@ -63,6 +64,7 @@ export function createTidySnapshot({
     changedTabIds: changedIds,
     appliedGroups: appliedGroups.map((group) => ({
       id: group.id,
+      kind: group.kind,
       name: group.name,
       color: group.color,
       count: group.count
@@ -84,6 +86,8 @@ export function createUndoPlan(
     return {
       canUndo: false,
       tabIdsToUngroup: [],
+      tabIdsToUnpin: [],
+      zenFolderIdsToRemove: [],
       originalGroups: [],
       groupCollapseUpdates: [],
       tabMoves: []
@@ -115,6 +119,13 @@ export function createUndoPlan(
   });
 
   const tabIdsToUngroup = undoableChangedTabIds;
+  // Zen folders pin their tabs, and ungrouping leaves them pinned.
+  const tabIdsToUnpin = tabIdsToUngroup.filter((tabId) =>
+    snapshotTabById.get(tabId)?.pinned === false && currentTabById.get(tabId)?.pinned === true
+  );
+  const zenFolderIdsToRemove = (snapshot.appliedGroups || [])
+    .filter((group) => group.kind === "zen-folder" && Number.isInteger(group.id))
+    .map((group) => group.id);
   const tabMoves = tabIdsToUngroup
     .map((tabId) => {
       const snapshotTab = snapshotTabById.get(tabId);
@@ -133,6 +144,8 @@ export function createUndoPlan(
     return {
       canUndo: tabIdsToUngroup.length > 0 || groupCollapseUpdates.length > 0,
       tabIdsToUngroup,
+      tabIdsToUnpin,
+      zenFolderIdsToRemove,
       originalGroups: [],
       groupCollapseUpdates,
       tabMoves
@@ -172,6 +185,8 @@ export function createUndoPlan(
   return {
     canUndo: tabIdsToUngroup.length > 0 || originalGroups.length > 0 || groupCollapseUpdates.length > 0,
     tabIdsToUngroup,
+    tabIdsToUnpin,
+    zenFolderIdsToRemove,
     originalGroups,
     groupCollapseUpdates,
     tabMoves

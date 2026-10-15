@@ -392,4 +392,141 @@ import type { NativeMessage } from "./fixtures/options.js";
   assert.equal(chrome.__state.storage.provider, "heuristic");
 }
 
+{
+  const { elements, chrome } = await importOptions();
+  assert.equal(elements["group-target-field"].hidden, true);
+  assert.equal(elements["provider-chrome-ai"].hidden, false);
+  elements.groupTarget.value = "zen-folders";
+  await elements.groupTarget.dispatch("change");
+  await waitUntil(() => elements["save-status"].textContent === "Saved");
+  assert.equal(chrome.__state.storage.groupTarget, "auto");
+}
+
+{
+  const { elements, chrome } = await importOptions({ gecko: true, zenFolders: true });
+  assert.equal(elements["group-target-field"].hidden, false);
+  assert.equal(elements["provider-chrome-ai"].hidden, true);
+  assert.equal(elements.groupTarget.value, "zen-folders");
+  elements.groupTarget.value = "tab-groups";
+  await elements.groupTarget.dispatch("change");
+  await waitUntil(() => chrome.__state.storage.groupTarget === "tab-groups");
+}
+
+{
+  const { elements } = await importOptions({ gecko: true, stored: { provider: "chrome-ai" } });
+  assert.equal(elements["provider-chrome-ai"].hidden, false);
+}
+
+{
+  const { elements } = await importOptions({
+    accountPanel: true,
+    nativePermissionGranted: true,
+    stored: { provider: "local-codex-cli" },
+    nativeStatus: {
+      provider: "local-codex-cli",
+      configured: true,
+      executableAvailable: true,
+      authChecked: true,
+      authenticated: true,
+      lockExecutables: true,
+      account: { authMethod: "chatgpt", plan: "plus", email: "me@example.com" }
+    }
+  });
+  await waitUntil(() => elements["cli-account"].dataset.state === "ready");
+  assert.equal(elements["cli-account-title"].textContent, "Codex CLI connected");
+  assert.equal(elements["cli-account-detail"].textContent, "ChatGPT Plus · me@example.com");
+  assert.equal(elements["cli-setup"].hidden, true);
+}
+
+{
+  const { elements } = await importOptions({
+    accountPanel: true,
+    nativePermissionGranted: true,
+    stored: { provider: "local-claude-cli" },
+    nativeStatus: {
+      provider: "local-claude-cli",
+      configured: true,
+      executableAvailable: true,
+      authChecked: true,
+      authenticated: false,
+      lockExecutables: true
+    }
+  });
+  await waitUntil(() => elements["cli-account"].dataset.state === "warning");
+  assert.equal(elements["cli-account-title"].textContent, "Claude Code CLI is not signed in");
+  assert.match(elements["cli-account-detail"].textContent, /claude auth login/);
+}
+
+{
+  const { elements } = await importOptions({
+    accountPanel: true,
+    gecko: true,
+    zenFolders: true,
+    nativePermissionGranted: true,
+    nativeHostMissing: true,
+    stored: { provider: "local-codex-cli" }
+  });
+  await waitUntil(() => elements["cli-account"].dataset.state === "error");
+  assert.equal(elements["cli-account-title"].textContent, "Local bridge not installed");
+  assert.equal(elements["cli-setup"].hidden, false);
+  assert.equal(elements["cli-setup-command"].textContent, "nub run native:install --browser zen");
+}
+
+{
+  const { elements } = await importOptions({ accountPanel: true, stored: { provider: "local-codex-cli" } });
+  await waitUntil(() => elements["cli-account"].dataset.state === "idle");
+  assert.equal(elements["cli-account-title"].textContent, "Not connected yet");
+}
+
+{
+  const signedOut = {
+    provider: "local-codex-cli",
+    configured: true,
+    executableAvailable: true,
+    authChecked: true,
+    authenticated: false,
+    lockExecutables: true
+  };
+  const { elements, chrome } = await importOptions({
+    accountPanel: true,
+    nativePermissionGranted: true,
+    stored: { provider: "local-codex-cli", codexAccount: "separate" },
+    nativeStatus: signedOut
+  });
+  await waitUntil(() => elements["cli-account"].dataset.state === "warning");
+  assert.equal(elements.codexAccount.value, "separate");
+  assert.equal(elements["codex-account-row"].hidden, false);
+  assert.equal(elements["cli-account-title"].textContent, "Tab Grouper account not signed in");
+  assert.equal(elements["cli-sign-in"].hidden, false);
+  assert.equal(elements["cli-sign-in"].textContent, "Sign in");
+  assert.equal(elements["cli-sign-out"].hidden, true);
+
+  Object.assign(signedOut, { authenticated: true, account: { authMethod: "chatgpt", plan: "free", email: "free@example.com" } });
+  await elements["cli-sign-in"].dispatch("click");
+  await waitUntil(() => elements["cli-account"].dataset.state === "ready");
+  const login = (chrome.__state.sentNativeMessages as Array<NativeMessage & { account?: string }>).find((message) => message.type === "NATIVE_HOST_LOGIN_REQUEST");
+  assert.equal(login?.account, "separate");
+  assert.equal(elements["cli-account-title"].textContent, "Tab Grouper account connected");
+  assert.equal(elements["cli-account-detail"].textContent, "ChatGPT Free · free@example.com");
+  assert.equal(elements["cli-sign-in"].textContent, "Switch account");
+  assert.equal(elements["cli-sign-out"].hidden, false);
+}
+
+{
+  const { elements, chrome } = await importOptions({
+    accountPanel: true,
+    nativePermissionGranted: true,
+    stored: { provider: "local-codex-cli" }
+  });
+  await waitUntil(() => elements["cli-account"].dataset.state === "ready");
+  assert.equal(elements["cli-sign-in"].hidden, true);
+  elements.codexAccount.value = "separate";
+  await elements.codexAccount.dispatch("change");
+  await waitUntil(() => chrome.__state.storage.codexAccount === "separate");
+  const statusRequests = (chrome.__state.sentNativeMessages as Array<NativeMessage & { account?: string }>)
+    .filter((message) => message.type === "NATIVE_HOST_STATUS_REQUEST");
+  await waitUntil(() => (chrome.__state.sentNativeMessages as Array<NativeMessage & { account?: string }>).some((message) => message.type === "NATIVE_HOST_STATUS_REQUEST" && message.account === "separate"));
+  assert.equal(statusRequests[0]?.account, undefined);
+}
+
 console.log("Options tests passed.");

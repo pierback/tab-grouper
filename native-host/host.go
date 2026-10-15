@@ -19,6 +19,11 @@ type ModelsRunner interface {
 	ListModels(ctx context.Context, request Request) ([]ModelInfo, error)
 }
 
+type AccountRunner interface {
+	Login(ctx context.Context, request Request) (Status, error)
+	Logout(ctx context.Context, request Request) (Status, error)
+}
+
 func NewHost() Host {
 	configPath, err := DefaultConfigPath()
 	if err != nil {
@@ -75,6 +80,28 @@ func (host Host) Handle(ctx context.Context, request Request) Response {
 		status, err := statusRunner.Status(ctx, request)
 		if err != nil {
 			kind := "native-host-config-error"
+			var bridgeError BridgeError
+			if errors.As(err, &bridgeError) {
+				kind = bridgeError.Kind
+			}
+			return ErrorResponse(request, kind, err)
+		}
+		return StatusResponse(request, status)
+	}
+	if request.Type == RequestLoginType || request.Type == RequestLogoutType {
+		accountRunner, ok := host.Runner.(AccountRunner)
+		if !ok {
+			return ErrorResponse(request, "native-host-config-error", fmt.Errorf("native host account management is unavailable"))
+		}
+		var status Status
+		var err error
+		if request.Type == RequestLoginType {
+			status, err = accountRunner.Login(ctx, request)
+		} else {
+			status, err = accountRunner.Logout(ctx, request)
+		}
+		if err != nil {
+			kind := "cli-error"
 			var bridgeError BridgeError
 			if errors.As(err, &bridgeError) {
 				kind = bridgeError.Kind

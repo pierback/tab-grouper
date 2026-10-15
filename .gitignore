@@ -2,3 +2,5 @@ node_modules/
 dist/
 native-host/bin/
 .gocache/
+build/
+native-host/native-host

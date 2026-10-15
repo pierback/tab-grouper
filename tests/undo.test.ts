@@ -12,7 +12,7 @@ const snapshot = createTidySnapshot({
   tabs,
   groups: [{ id: 7, title: "Original", color: "blue", collapsed: true, windowId: 10 }],
   changedTabIds: [1, 2, 2, "bad"],
-  appliedGroups: [{ id: 100, name: "Code", color: "green", count: 2 }],
+  appliedGroups: [{ id: 100, kind: "tab-group", name: "Code", color: "green", count: 2 }],
   settings: { keepExistingGroups: true }
 });
 
@@ -31,6 +31,8 @@ assert.deepEqual(
   {
     canUndo: true,
     tabIdsToUngroup: [1, 2],
+    tabIdsToUnpin: [],
+    zenFolderIdsToRemove: [],
     originalGroups: [],
     groupCollapseUpdates: [],
     tabMoves: [
@@ -48,6 +50,8 @@ assert.deepEqual(
   {
     canUndo: false,
     tabIdsToUngroup: [],
+    tabIdsToUnpin: [],
+    zenFolderIdsToRemove: [],
     originalGroups: [],
     groupCollapseUpdates: [],
     tabMoves: []
@@ -62,6 +66,8 @@ assert.deepEqual(
   {
     canUndo: true,
     tabIdsToUngroup: [2],
+    tabIdsToUnpin: [],
+    zenFolderIdsToRemove: [],
     originalGroups: [],
     groupCollapseUpdates: [],
     tabMoves: [
@@ -78,7 +84,7 @@ const regroupSnapshot = createTidySnapshot({
   ],
   groups: [{ id: 7, title: "Original", color: "purple", collapsed: false, windowId: 10 }],
   changedTabIds: [1, 2],
-  appliedGroups: [{ id: 100, name: "Mixed", color: "orange", count: 2 }],
+  appliedGroups: [{ id: 100, kind: "tab-group", name: "Mixed", color: "orange", count: 2 }],
   settings: { keepExistingGroups: false }
 });
 
@@ -90,6 +96,8 @@ assert.deepEqual(
   {
     canUndo: true,
     tabIdsToUngroup: [1, 2],
+    tabIdsToUnpin: [],
+    zenFolderIdsToRemove: [],
     originalGroups: [
       { id: 7, title: "Original", color: "purple", collapsed: false, tabIds: [1] }
     ],
@@ -109,6 +117,8 @@ assert.deepEqual(
   {
     canUndo: true,
     tabIdsToUngroup: [2],
+    tabIdsToUnpin: [],
+    zenFolderIdsToRemove: [],
     originalGroups: [],
     groupCollapseUpdates: [],
     tabMoves: [
@@ -138,6 +148,8 @@ assert.deepEqual(
   {
     canUndo: true,
     tabIdsToUngroup: [1],
+    tabIdsToUnpin: [],
+    zenFolderIdsToRemove: [],
     originalGroups: [],
     groupCollapseUpdates: [{ groupId: 7, collapsed: false }],
     tabMoves: [
@@ -165,6 +177,8 @@ assert.deepEqual(
   {
     canUndo: true,
     tabIdsToUngroup: [],
+    tabIdsToUnpin: [],
+    zenFolderIdsToRemove: [],
     originalGroups: [],
     groupCollapseUpdates: [{ groupId: 7, collapsed: false }],
     tabMoves: []
@@ -174,9 +188,46 @@ assert.deepEqual(
 assert.deepEqual(createUndoPlan(null, [], []), {
   canUndo: false,
   tabIdsToUngroup: [],
+  tabIdsToUnpin: [],
+  zenFolderIdsToRemove: [],
   originalGroups: [],
   groupCollapseUpdates: [],
   tabMoves: []
 });
+
+
+const zenFolderSnapshot = createTidySnapshot({
+  windowId: 10,
+  tabs: [
+    { id: 1, groupId: -1, pinned: false, windowId: 10, index: 0 },
+    { id: 2, groupId: -1, pinned: false, windowId: 10, index: 1 },
+    { id: 3, groupId: -1, pinned: true, windowId: 10, index: 2 }
+  ],
+  groups: [],
+  changedTabIds: [1, 2, 3],
+  appliedGroups: [{ id: 300, kind: "zen-folder", name: "Docs", color: "blue", count: 3 }],
+  settings: { keepExistingGroups: true }
+});
+
+assert.deepEqual(
+  createUndoPlan(zenFolderSnapshot, [
+    { id: 1, groupId: 300, pinned: true },
+    { id: 2, groupId: 300, pinned: true },
+    { id: 3, groupId: 300, pinned: true }
+  ], []),
+  {
+    canUndo: true,
+    tabIdsToUngroup: [1, 2, 3],
+    tabIdsToUnpin: [1, 2],
+    zenFolderIdsToRemove: [300],
+    originalGroups: [],
+    groupCollapseUpdates: [],
+    tabMoves: [
+      { tabId: 1, index: 0 },
+      { tabId: 2, index: 1 },
+      { tabId: 3, index: 2 }
+    ]
+  }
+);
 
 console.log("Undo tests passed.");

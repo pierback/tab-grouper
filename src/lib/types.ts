@@ -10,6 +10,20 @@ export type Provider =
 
 export type LocalCliProvider = "codex" | "claude";
 
+export interface CliAccount {
+  authMethod?: string;
+  plan?: string;
+  email?: string;
+}
+
+// "auto" means Zen folders when the Zen experiment is present, tab groups otherwise.
+export type GroupTarget = "auto" | "tab-groups" | "zen-folders";
+
+// "default" uses the Codex CLI's own ~/.codex login; "separate" uses Tab Grouper's own login.
+export type CodexAccount = "default" | "separate";
+
+export type AppliedGroupKind = "tab-group" | "zen-folder";
+
 export type CostBasis = "reported" | "api-estimate";
 
 export interface NativeModelInfo {
@@ -38,6 +52,8 @@ export interface Settings {
   autoTidyEnabled: boolean;
   autoTidyIntervalMinutes: number;
   providerRequestTimeoutSeconds: number;
+  groupTarget: GroupTarget;
+  codexAccount: CodexAccount;
 }
 
 export type PartialSettings = Partial<Settings> | Record<string, unknown>;
@@ -135,6 +151,7 @@ export interface ExistingGroup {
 
 export interface AppliedGroup {
   id: number;
+  kind: AppliedGroupKind;
   name: string;
   color: TabGroupColor;
   count: number;
@@ -162,6 +179,7 @@ export interface CurrentWindowPlanResult {
 export interface TidySnapshotTab {
   id: number;
   groupId: number;
+  pinned?: boolean;
   windowId?: number;
   index?: number;
 }
@@ -193,6 +211,8 @@ export interface TidySnapshot {
 export interface UndoPlan {
   canUndo: boolean;
   tabIdsToUngroup: number[];
+  tabIdsToUnpin: number[];
+  zenFolderIdsToRemove: number[];
   originalGroups: Array<TidySnapshotGroup & { tabIds: number[] }>;
   groupCollapseUpdates: Array<{ groupId: number; collapsed: boolean }>;
   tabMoves: Array<{ tabId: number; index: number }>;

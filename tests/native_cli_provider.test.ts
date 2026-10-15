@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { checkNativeCliStatus, createPlanWithNativeCli, listNativeModels, NATIVE_HOST_NAME } from "../src/lib/native_cli_provider.js";
+import {
+  checkNativeCliStatus,
+  createPlanWithNativeCli,
+  listNativeModels,
+  NATIVE_HOST_NAME,
+  signInSeparateCodexAccount
+} from "../src/lib/native_cli_provider.js";
 import type { ProviderError } from "../src/lib/types.js";
 
 interface NativeRequest {
@@ -7,6 +13,7 @@ interface NativeRequest {
   requestId: string;
   type: string;
   provider?: string;
+  account?: string;
   timeoutMs?: number;
   model?: string;
   reasoningEffort?: string;
@@ -42,6 +49,7 @@ interface CreateChromeConfig {
   hasPermission?: boolean;
   nativeResponse?: (message: NativeRequest) => NativeResponse;
   disconnectError?: string | null;
+  geckoPortError?: string | null;
   postMessageError?: string | null;
 }
 
@@ -50,7 +58,7 @@ function providerError(error: unknown): ProviderError {
   return error as ProviderError;
 }
 
-function createChrome({ hasPermission = true, nativeResponse, disconnectError = null, postMessageError = null }: CreateChromeConfig = {}) {
+function createChrome({ hasPermission = true, nativeResponse, disconnectError = null, geckoPortError = null, postMessageError = null }: CreateChromeConfig = {}) {
   const state = {
     sentMessages: [] as NativeRequest[],
     hostNames: [] as string[]
@@ -69,7 +77,8 @@ function createChrome({ hasPermission = true, nativeResponse, disconnectError = 
         state.hostNames.push(hostName);
         const messageListeners: Array<(response: NativeResponse) => void> = [];
         const disconnectListeners: Array<() => void> = [];
-        return {
+        const port = {
+          error: null as Error | null,
           onMessage: {
             addListener(callback: (response: NativeResponse) => void) {
               messageListeners.push(callback);
@@ -86,6 +95,13 @@ function createChrome({ hasPermission = true, nativeResponse, disconnectError = 
             }
             state.sentMessages.push(message);
             setTimeout(() => {
+              if (geckoPortError) {
+                port.error = new Error(geckoPortError);
+                for (const callback of disconnectListeners) {
+                  callback();
+                }
+                return;
+              }
               if (disconnectError) {
                 chrome.runtime.lastError = { message: disconnectError };
                 for (const callback of disconnectListeners) {
@@ -101,6 +117,7 @@ function createChrome({ hasPermission = true, nativeResponse, disconnectError = 
           },
           disconnect() {}
         };
+        return port;
       }
     }
   };
@@ -140,7 +157,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 3,
+        version: 4,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -166,8 +183,9 @@ const tabs = [
     assert.deepEqual(plan.groups, [{ name: "Codex GitHub", color: "blue", tabIds: [1, 2] }]);
     assert.deepEqual(plan.timing, { durationMs: 321, inputTokens: 10, outputTokens: 5, costUsd: 0.0123 });
     assert.deepEqual(chrome.__state.hostNames, [NATIVE_HOST_NAME]);
-    assert.equal(chrome.__state.sentMessages[0]!.version, 3);
+    assert.equal(chrome.__state.sentMessages[0]!.version, 4);
     assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
+    assert.equal(chrome.__state.sentMessages[0]!.account, undefined);
     assert.equal(Object.hasOwn(chrome.__state.sentMessages[0]!, "model"), false);
     assert.equal(Object.hasOwn(chrome.__state.sentMessages[0]!, "reasoningEffort"), false);
     assert.equal(chrome.__state.sentMessages[0]!.timeoutMs, 180000);
@@ -184,7 +202,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 3,
+        version: 4,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -211,7 +229,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 3,
+        version: 4,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -240,7 +258,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 3,
+        version: 4,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -269,7 +287,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 3,
+        version: 4,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -303,7 +321,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 3,
+        version: 4,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -325,7 +343,7 @@ const tabs = [
   assert.equal(status.configured, true);
   assert.equal(status.executableAvailable, true);
   assert.equal(chrome.__state.sentMessages[0]!.type, "NATIVE_HOST_STATUS_REQUEST");
-    assert.equal(chrome.__state.sentMessages[0]!.version, 3);
+    assert.equal(chrome.__state.sentMessages[0]!.version, 4);
   assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
 }
 
@@ -333,7 +351,7 @@ const tabs = [
   const chrome = createChrome({
     nativeResponse(message) {
       return {
-        version: 3,
+        version: 4,
         type: "TAB_GROUP_PLAN_RESPONSE",
         requestId: message.requestId,
         ok: true,
@@ -353,7 +371,7 @@ const tabs = [
     { slug: "gpt-5.4-mini", displayName: "GPT-5.4-Mini", supportedReasoningLevels: ["low", "medium", "high", "xhigh"], defaultReasoningLevel: "medium" }
   ]);
   assert.equal(chrome.__state.sentMessages[0]!.type, "NATIVE_HOST_LIST_MODELS_REQUEST");
-    assert.equal(chrome.__state.sentMessages[0]!.version, 3);
+    assert.equal(chrome.__state.sentMessages[0]!.version, 4);
   assert.equal(chrome.__state.sentMessages[0]!.provider, "codex");
 }
 
@@ -439,6 +457,45 @@ const tabs = [
     createPlanWithNativeCli(tabs, { minimumGroupSize: 2 }, "codex"),
     (error) => providerError(error).providerErrorKind === "native-host-not-found"
   );
+}
+
+{
+  const chrome = createChrome({
+    geckoPortError: "No such native application com.fabianpieringer.tab_grouper"
+  });
+  globalThis.chrome = chrome as unknown as typeof globalThis.chrome;
+  await assert.rejects(
+    createPlanWithNativeCli(tabs, { minimumGroupSize: 2 }, "codex"),
+    (error) => providerError(error).providerErrorKind === "native-host-not-found"
+  );
+}
+
+{
+  const statusResponse = (message: NativeRequest): NativeResponse => ({
+    version: 4,
+    type: "TAB_GROUP_PLAN_RESPONSE",
+    requestId: message.requestId,
+    ok: true,
+    provider: "local-codex-cli",
+    plan: { groups: [] },
+    status: { provider: "local-codex-cli", configured: true, executableAvailable: true, authChecked: true, authenticated: true, lockExecutables: true, account: { authMethod: "chatgpt", plan: "free" } }
+  });
+  const chrome = createChrome({ nativeResponse: statusResponse });
+  globalThis.chrome = chrome as unknown as typeof globalThis.chrome;
+
+  await createPlanWithNativeCli(tabs, { minimumGroupSize: 2, codexAccount: "separate" }, "codex");
+  await createPlanWithNativeCli(tabs, { minimumGroupSize: 2, codexAccount: "separate" }, "claude");
+  await checkNativeCliStatus("local-codex-cli", "separate");
+  const signedIn = await signInSeparateCodexAccount();
+
+  const sent = chrome.__state.sentMessages as NativeRequest[];
+  assert.deepEqual(sent.map((message) => [message.type, message.provider, message.account]), [
+    ["TAB_GROUP_PLAN_REQUEST", "codex", "separate"],
+    ["TAB_GROUP_PLAN_REQUEST", "claude", undefined],
+    ["NATIVE_HOST_STATUS_REQUEST", "codex", "separate"],
+    ["NATIVE_HOST_LOGIN_REQUEST", "codex", "separate"]
+  ]);
+  assert.equal(signedIn.account?.plan, "free");
 }
 
 console.log("Native CLI provider tests passed.");

@@ -3,16 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Chrome MV3 extension that tidies tabs into logical groups.",
+  "description": "MV3 extension for Chrome, Firefox and Zen that tidies tabs into logical groups.",
   "scripts": {
     "build": "node scripts/build.mjs",
     "build:watch": "nub run build -- --watch",
+    "build:firefox": "node scripts/build.mjs --target firefox",
+    "build:zen": "node scripts/build.mjs --target zen",
+    "lint:firefox": "nub run build:firefox && web-ext lint --source-dir build/firefox",
+    "zen": "nub run build:zen && web-ext run --source-dir build/zen --firefox \"/Applications/Zen Browser.app/Contents/MacOS/zen\" --pref extensions.experiments.enabled=true",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "test": "nub run typecheck && nub run build && tsx tests/schema.test.ts && tsx tests/settings.test.ts && tsx tests/tabs.test.ts && tsx tests/page_hints.test.ts && tsx tests/hint_cache.test.ts && tsx tests/heuristics.test.ts && tsx tests/undo.test.ts && tsx tests/native_cli_provider.test.ts && node tests/install_native_host.test.mjs && tsx --test tests/cost_estimate.test.ts && tsx tests/providers.test.ts && tsx tests/provider_metadata.test.ts && tsx tests/plan_response.test.ts && tsx tests/plan_cache.test.ts && tsx --test tests/service_worker_*.test.ts && tsx tests/popup.test.ts && tsx tests/options.test.ts && tsx --test tests/options_races.test.ts && node scripts/validate-extension.mjs && nub run test:go && nub run test:native-host-e2e",
+    "test": "nub run typecheck && nub run build && tsx tests/schema.test.ts && tsx tests/settings.test.ts && tsx tests/tabs.test.ts && tsx tests/page_hints.test.ts && tsx tests/hint_cache.test.ts && tsx tests/heuristics.test.ts && tsx tests/undo.test.ts && tsx tests/native_cli_provider.test.ts && node tests/install_native_host.test.mjs && nub run build:firefox && nub run build:zen && node tests/gecko_manifest.test.mjs && tsx --test tests/cost_estimate.test.ts && tsx tests/providers.test.ts && tsx tests/provider_metadata.test.ts && tsx tests/plan_response.test.ts && tsx tests/plan_cache.test.ts && tsx --test tests/service_worker_*.test.ts && tsx tests/popup.test.ts && tsx tests/options.test.ts && tsx --test tests/options_races.test.ts && node scripts/validate-extension.mjs && nub run test:go && nub run test:native-host-e2e",
     "test:go": "cd native-host && go test ./...",
     "test:native-host-e2e": "node scripts/test-native-host-e2e.mjs",
     "native:install": "node scripts/install-native-host.mjs",
-    "smoke:chrome": "nub run build && node scripts/smoke-extension.mjs"
+    "smoke:chrome": "nub run build && node scripts/smoke-extension.mjs",
+    "smoke:zen": "node scripts/smoke-gecko.mjs --target zen",
+    "smoke:firefox": "node scripts/smoke-gecko.mjs --target firefox"
   },
   "devDependencies": {
     "@types/chrome": "^0.2.2",
@@ -20,7 +26,8 @@
     "@types/node": "^20.19.43",
     "esbuild": "^0.28.1",
     "tsx": "^4.23.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "web-ext": "^10.7.0"
   },
   "dependencies": {
     "effect": "4.0.0-beta.94"

@@ -2,6 +2,8 @@ import { Cause, Effect, Exit, Option } from "effect";
 import { createProviderError, omitUndefined } from "./provider_result.js";
 import { getProviderRequestTimeoutMs } from "./provider_timeout.js";
 import type {
+  CliAccount,
+  CodexAccount,
   ExistingGroup,
   LocalCliProvider,
   NativeModelInfo,
@@ -16,10 +18,14 @@ import type {
 type NativeCliSettings = Partial<Settings>;
 
 export const NATIVE_HOST_NAME = "com.fabianpieringer.tab_grouper";
-const NATIVE_PROTOCOL_VERSION = 3 as const;
+const NATIVE_PROTOCOL_VERSION = 4 as const;
 const REQUEST_TYPE = "TAB_GROUP_PLAN_REQUEST";
 const STATUS_REQUEST_TYPE = "NATIVE_HOST_STATUS_REQUEST";
 const LIST_MODELS_REQUEST_TYPE = "NATIVE_HOST_LIST_MODELS_REQUEST";
+const LOGIN_REQUEST_TYPE = "NATIVE_HOST_LOGIN_REQUEST";
+const LOGOUT_REQUEST_TYPE = "NATIVE_HOST_LOGOUT_REQUEST";
+// codex login waits up to 5 minutes for the browser sign-in.
+const LOGIN_TIMEOUT_MS = 5 * 60 * 1000 + 10000;
 const RESPONSE_TYPE = "TAB_GROUP_PLAN_RESPONSE";
 const STATUS_TIMEOUT_MS = 3000;
 const LIST_MODELS_TIMEOUT_MS = 5000;
@@ -30,6 +36,7 @@ interface NativePlanRequest {
   type: typeof REQUEST_TYPE;
   requestId: string;
   provider: LocalCliProvider;
+  account?: CodexAccount;
   timeoutMs: number;
   minimumGroupSize: number;
   includeFullUrls: boolean;
@@ -52,6 +59,7 @@ interface NativeStatusRequest {
   type: typeof STATUS_REQUEST_TYPE;
   requestId: string;
   provider: LocalCliProvider;
+  account?: CodexAccount;
 }
 
 interface NativeListModelsRequest {
@@ -59,6 +67,15 @@ interface NativeListModelsRequest {
   type: typeof LIST_MODELS_REQUEST_TYPE;
   requestId: string;
   provider: "codex";
+  account?: CodexAccount;
+}
+
+interface NativeAccountRequest {
+  version: typeof NATIVE_PROTOCOL_VERSION;
+  type: typeof LOGIN_REQUEST_TYPE | typeof LOGOUT_REQUEST_TYPE;
+  requestId: string;
+  provider: "codex";
+  account: "separate";
 }
 
 interface NativeResponse {
@@ -77,13 +94,14 @@ interface NativeResponse {
   models?: NativeModelInfo[];
 }
 
-interface NativeCliStatus {
+export interface NativeCliStatus {
   provider: Provider;
   configured: boolean;
   executableAvailable: boolean;
   authChecked: boolean;
   authenticated: boolean;
   lockExecutables: boolean;
+  account?: CliAccount;
 }
 
 export async function createPlanWithNativeCli(
@@ -101,6 +119,7 @@ export async function createPlanWithNativeCli(
     type: REQUEST_TYPE,
     requestId,
     provider: cliProvider,
+    account: codexAccountFor(cliProvider, settings.codexAccount),
     timeoutMs,
     minimumGroupSize: Number(settings.minimumGroupSize || 2),
     includeFullUrls: settings.includeFullUrls === true,
@@ -140,14 +159,15 @@ export async function createPlanWithNativeCli(
   return { ...plan, timing };
 }
 
-export async function checkNativeCliStatus(provider: Provider | LocalCliProvider): Promise<NativeCliStatus> {
+export async function checkNativeCliStatus(provider: Provider | LocalCliProvider, codexAccount?: CodexAccount): Promise<NativeCliStatus> {
   const cliProvider = normalizeCliProvider(provider);
   await ensureNativeMessagingPermission();
   const request: NativeStatusRequest = {
     version: NATIVE_PROTOCOL_VERSION,
     type: STATUS_REQUEST_TYPE,
     requestId: createRequestId(),
-    provider: cliProvider
+    provider: cliProvider,
+    account: codexAccountFor(cliProvider, codexAccount)
   };
   const response = await sendNativeRequest(request, STATUS_TIMEOUT_MS);
   return response.status || {
@@ -160,7 +180,7 @@ export async function checkNativeCliStatus(provider: Provider | LocalCliProvider
   };
 }
 
-export async function listNativeModels(provider: Provider | LocalCliProvider): Promise<NativeModelInfo[]> {
+export async function listNativeModels(provider: Provider | LocalCliProvider, codexAccount?: CodexAccount): Promise<NativeModelInfo[]> {
   const cliProvider = normalizeCliProvider(provider);
   if (cliProvider !== "codex") {
     throw createProviderError("native-host-protocol-error", "Only the Codex CLI supports model listing.");
@@ -170,15 +190,45 @@ export async function listNativeModels(provider: Provider | LocalCliProvider): P
     version: NATIVE_PROTOCOL_VERSION,
     type: LIST_MODELS_REQUEST_TYPE,
     requestId: createRequestId(),
-    provider: "codex"
+    provider: "codex",
+    account: codexAccountFor("codex", codexAccount)
   };
   const response = await sendNativeRequest(request, LIST_MODELS_TIMEOUT_MS);
   return Array.isArray(response.models) ? response.models : [];
 }
 
-function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest | NativeListModelsRequest, timeoutMs: number): Promise<NativeResponse> {
+// Opens the browser sign-in for Tab Grouper's separate Codex account and resolves once it finishes.
+export async function signInSeparateCodexAccount(): Promise<NativeCliStatus> {
+  return sendSeparateAccountRequest(LOGIN_REQUEST_TYPE, LOGIN_TIMEOUT_MS);
+}
+
+export async function signOutSeparateCodexAccount(): Promise<NativeCliStatus> {
+  return sendSeparateAccountRequest(LOGOUT_REQUEST_TYPE, STATUS_TIMEOUT_MS);
+}
+
+async function sendSeparateAccountRequest(type: NativeAccountRequest["type"], timeoutMs: number): Promise<NativeCliStatus> {
+  await ensureNativeMessagingPermission();
+  const request: NativeAccountRequest = {
+    version: NATIVE_PROTOCOL_VERSION,
+    type,
+    requestId: createRequestId(),
+    provider: "codex",
+    account: "separate"
+  };
+  const response = await sendNativeRequest(request, timeoutMs);
+  if (!response.status) {
+    throw createProviderError("native-host-protocol-error", "Local CLI bridge returned no account status.");
+  }
+  return response.status;
+}
+
+function codexAccountFor(cliProvider: LocalCliProvider, codexAccount: CodexAccount | undefined): CodexAccount | undefined {
+  return cliProvider === "codex" && codexAccount === "separate" ? "separate" : undefined;
+}
+
+function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest | NativeListModelsRequest | NativeAccountRequest, timeoutMs: number): Promise<NativeResponse> {
   const portEffect = Effect.callback<NativeResponse, ProviderError>((resume) => {
-    let port: chrome.runtime.Port;
+    let port: GeckoCompatiblePort;
     try {
       port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
     } catch (error) {
@@ -206,7 +256,7 @@ function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest | Na
     });
 
     port.onDisconnect.addListener(() => {
-      resume(Effect.fail(classifyNativeError(chrome.runtime.lastError)));
+      resume(Effect.fail(classifyNativeError(chrome.runtime.lastError ?? port.error)));
     });
 
     try {
@@ -269,9 +319,12 @@ async function ensureNativeMessagingPermission() {
   }
 }
 
+// Firefox reports native port failures on port.error instead of runtime.lastError.
+type GeckoCompatiblePort = chrome.runtime.Port & { error?: Error | null };
+
 function classifyNativeError(error: unknown) {
   const message = readErrorMessage(error, "Local CLI bridge disconnected.");
-  if (/host.*not found|specified native messaging host not found/i.test(message)) {
+  if (/host.*not found|specified native messaging host not found|no such native application/i.test(message)) {
     return createProviderError("native-host-not-found", "Tab Grouper native bridge is not installed.");
   }
   if (/forbidden|not allowed|access/i.test(message)) {

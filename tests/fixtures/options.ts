@@ -14,7 +14,7 @@ interface FakeElement {
   hidden: boolean;
   disabled: boolean;
   children: FakeElement[];
-  dataset: { providerSection?: string };
+  dataset: { providerSection?: string; state?: string };
   elements?: Record<string, FakeElement>;
   appendChild(child: FakeElement): FakeElement;
   replaceChildren(...children: FakeElement[]): void;
@@ -45,6 +45,18 @@ interface FakeElements {
   autoTidyEnabled: FakeElement;
   autoTidyIntervalMinutes: FakeElement;
   providerRequestTimeoutSeconds: FakeElement;
+  groupTarget: FakeElement;
+  "group-target-field": FakeElement;
+  "provider-chrome-ai": FakeElement;
+  "cli-account": FakeElement;
+  "cli-account-title": FakeElement;
+  "cli-account-detail": FakeElement;
+  "cli-setup": FakeElement;
+  "cli-setup-command": FakeElement;
+  "codex-account-row": FakeElement;
+  "cli-sign-in": FakeElement;
+  "cli-sign-out": FakeElement;
+  codexAccount: FakeElement;
   "data-mode": FakeElement;
   "data-summary": FakeElement;
   "test-native-bridge": FakeElement;
@@ -59,6 +71,7 @@ interface NativeStatus {
   authChecked: boolean;
   authenticated: boolean;
   lockExecutables: boolean;
+  account?: { authMethod?: string; plan?: string; email?: string };
 }
 
 interface NativeMessage {
@@ -83,7 +96,13 @@ interface ImportOptionsConfig {
   deferNativeModelResponses?: boolean;
   deferNativeStatusResponses?: boolean;
   deferStorageWrites?: boolean;
+  gecko?: boolean;
+  zenFolders?: boolean;
+  accountPanel?: boolean;
+  nativeHostMissing?: boolean;
 }
+
+type ExperimentGlobal = typeof globalThis & { browser?: { zenFolders: Record<string, never> } };
 
 async function importOptions({
   permissionGrant = true,
@@ -94,9 +113,14 @@ async function importOptions({
   deferPermissionRequests = false,
   deferNativeModelResponses = false,
   deferNativeStatusResponses = false,
-  deferStorageWrites = false
+  deferStorageWrites = false,
+  gecko = false,
+  zenFolders = false,
+  accountPanel = false,
+  nativeHostMissing = false
 }: ImportOptionsConfig = {}) {
-  const elements = createFakeElements();
+  const elements = createFakeElements(accountPanel);
+  (globalThis as ExperimentGlobal).browser = zenFolders ? { zenFolders: {} } : undefined;
   const fakeChrome = createFakeChrome({
     permissionGrant,
     nativePermissionGranted,
@@ -106,7 +130,9 @@ async function importOptions({
     deferPermissionRequests,
     deferNativeModelResponses,
     deferNativeStatusResponses,
-    deferStorageWrites
+    deferStorageWrites,
+    gecko,
+    nativeHostMissing
   });
   globalThis.chrome = fakeChrome as unknown as typeof globalThis.chrome;
   globalThis.document = createFakeDocument(elements) as unknown as Document;
@@ -144,7 +170,7 @@ async function importOptions({
   return { elements, chrome: fakeChrome };
 }
 
-function createFakeElements(): FakeElements {
+function createFakeElements(accountPanel: boolean): FakeElements {
   const form = createElement("settings-form", "form");
   form.elements = {};
 
@@ -157,8 +183,17 @@ function createFakeElements(): FakeElements {
     "data-mode": createElement("data-mode", "strong"),
     "data-summary": createElement("data-summary", "p"),
     "test-native-bridge": createElement("test-native-bridge", "button"),
-    "native-bridge-status": createElement("native-bridge-status", "span")
+    "native-bridge-status": createElement("native-bridge-status", "span"),
+    "group-target-field": createElement("group-target-field", "label"),
+    "provider-chrome-ai": createElement("provider-chrome-ai", "option")
   };
+  elementById["group-target-field"]!.hidden = true;
+  if (accountPanel) {
+    for (const id of ["cli-account", "cli-account-title", "cli-account-detail", "cli-setup", "cli-setup-command", "codex-account-row", "cli-sign-in", "cli-sign-out"]) {
+      elementById[id] = createElement(id, "div");
+    }
+    elementById["cli-setup"]!.hidden = true;
+  }
 
   const fieldDefinitions: Array<[string, string, string | boolean]> = [
     ["provider", "select", "heuristic"],
@@ -176,7 +211,9 @@ function createFakeElements(): FakeElements {
     ["minimumGroupSize", "number", "2"],
     ["autoTidyEnabled", "checkbox", false],
     ["autoTidyIntervalMinutes", "number", "30"],
-    ["providerRequestTimeoutSeconds", "number", "120"]
+    ["providerRequestTimeoutSeconds", "number", "120"],
+    ["groupTarget", "select", "tab-groups"],
+    ["codexAccount", "select", "default"]
   ];
 
   for (const [id, type, value] of fieldDefinitions) {
@@ -282,8 +319,10 @@ function createFakeChrome({
   deferPermissionRequests,
   deferNativeModelResponses,
   deferNativeStatusResponses,
-  deferStorageWrites
-}: Required<ImportOptionsConfig>) {
+  deferStorageWrites,
+  gecko,
+  nativeHostMissing
+}: Omit<Required<ImportOptionsConfig>, "zenFolders" | "accountPanel">) {
   const state = {
     storage: { ...stored },
     permissionRequests: [] as chrome.permissions.Permissions[],
@@ -337,10 +376,14 @@ function createFakeChrome({
     },
     runtime: {
       lastError: null,
+      getURL(path: string) {
+        return `${gecko ? "moz-extension" : "chrome-extension"}://test-extension/${path}`;
+      },
       connectNative() {
         const messageListeners: Array<(message: Record<string, unknown>) => void> = [];
         const disconnectListeners: Array<() => void> = [];
-        return {
+        const port = {
+          error: null as Error | null,
           onMessage: {
             addListener(callback: (message: Record<string, unknown>) => void) {
               messageListeners.push(callback);
@@ -353,11 +396,20 @@ function createFakeChrome({
           },
           postMessage(message: NativeMessage) {
             state.sentNativeMessages.push(message);
+            if (nativeHostMissing) {
+              setTimeout(() => {
+                port.error = new Error("No such native application com.fabianpieringer.tab_grouper");
+                for (const callback of disconnectListeners) {
+                  callback();
+                }
+              }, 0);
+              return;
+            }
             const respond = () => {
               for (const callback of messageListeners) {
                 if (message.type === "NATIVE_HOST_LIST_MODELS_REQUEST") {
                   callback({
-                    version: 3,
+                    version: 4,
                     type: "TAB_GROUP_PLAN_RESPONSE",
                     requestId: message.requestId,
                     ok: true,
@@ -367,7 +419,7 @@ function createFakeChrome({
                   continue;
                 }
                 callback({
-                  version: 3,
+                  version: 4,
                   type: "TAB_GROUP_PLAN_RESPONSE",
                   requestId: message.requestId,
                   ok: true,
@@ -399,6 +451,7 @@ function createFakeChrome({
             }
           }
         };
+        return port;
       }
     }
   };

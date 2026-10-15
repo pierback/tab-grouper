@@ -19,15 +19,20 @@ assert.match(result.stdout, /nub run native:install --browser brave/);
 
 assert.deepEqual(
   resolveBrowserManifestTargets("all").map((target) => target.id),
-  ["chrome", "brave", "edge", "chromium", "chrome-canary", "helium"]
+  ["chrome", "brave", "edge", "chromium", "chrome-canary", "helium", "firefox", "zen"]
 );
+assert.deepEqual(
+  resolveBrowserManifestTargets("zen").map((target) => [target.family, target.manifestDirParts]),
+  [["gecko", ["Mozilla"]]]
+);
+assert.match(result.stdout, /nub run native:install --browser zen/);
 assert.deepEqual(
   resolveBrowserManifestTargets("chrome").map((target) => target.id),
   ["chrome"]
 );
 assert.throws(
-  () => resolveBrowserManifestTargets("firefox"),
-  /Unsupported browser "firefox"\. Supported: all, chrome, brave, edge, chromium, chrome-canary, helium\./
+  () => resolveBrowserManifestTargets("safari"),
+  /Unsupported browser "safari"\. Supported: all, chrome, brave, edge, chromium, chrome-canary, helium, firefox, zen\./
 );
 
 console.log("Native host installer argument tests passed.");
