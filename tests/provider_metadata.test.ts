@@ -18,7 +18,7 @@ assert.deepEqual(
   getProviderDataScope({ provider: "heuristic", includeFullUrls: false }),
   {
     dataMode: "On-device",
-    dataSummary: "Tab titles and URLs stay in Chrome."
+    dataSummary: "Tab titles and URLs stay in your browser."
   }
 );
 

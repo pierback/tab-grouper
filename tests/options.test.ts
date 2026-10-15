@@ -392,4 +392,28 @@ import type { NativeMessage } from "./fixtures/options.js";
   assert.equal(chrome.__state.storage.provider, "heuristic");
 }
 
+{
+  const { elements, chrome } = await importOptions();
+  assert.equal(elements["group-target-field"].hidden, true);
+  assert.equal(elements["provider-chrome-ai"].hidden, false);
+  elements.groupTarget.value = "zen-folders";
+  await elements.groupTarget.dispatch("change");
+  await waitUntil(() => elements["save-status"].textContent === "Saved");
+  assert.equal(chrome.__state.storage.groupTarget, "tab-groups");
+}
+
+{
+  const { elements, chrome } = await importOptions({ gecko: true, zenFolders: true });
+  assert.equal(elements["group-target-field"].hidden, false);
+  assert.equal(elements["provider-chrome-ai"].hidden, true);
+  elements.groupTarget.value = "zen-folders";
+  await elements.groupTarget.dispatch("change");
+  await waitUntil(() => chrome.__state.storage.groupTarget === "zen-folders");
+}
+
+{
+  const { elements } = await importOptions({ gecko: true, stored: { provider: "chrome-ai" } });
+  assert.equal(elements["provider-chrome-ai"].hidden, false);
+}
+
 console.log("Options tests passed.");

@@ -1,0 +1,32 @@
+[
+  {
+    "namespace": "zenFolders",
+    "types": [
+      {
+        "id": "CreateOptions",
+        "type": "object",
+        "properties": {
+          "label": { "type": "string", "optional": true },
+          "collapsed": { "type": "boolean", "optional": true }
+        }
+      }
+    ],
+    "functions": [
+      {
+        "name": "create",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          { "name": "tabIds", "type": "array", "items": { "type": "integer" }, "minItems": 1 },
+          { "name": "options", "$ref": "CreateOptions", "optional": true }
+        ]
+      },
+      {
+        "name": "removeIfEmpty",
+        "type": "function",
+        "async": true,
+        "parameters": [{ "name": "folderId", "type": "integer" }]
+      }
+    ]
+  }
+]

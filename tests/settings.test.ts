@@ -27,7 +27,8 @@ const normalized = normalizeSettings({
   minimumGroupSize: 1,
   autoTidyEnabled: "true",
   autoTidyIntervalMinutes: 0,
-  providerRequestTimeoutSeconds: 999
+  providerRequestTimeoutSeconds: 999,
+  groupTarget: "spaces"
 });
 
 assert.equal(normalized.provider, "heuristic");
@@ -49,6 +50,8 @@ assert.equal(normalized.autoTidyEnabled, false);
 assert.equal(normalized.autoTidyIntervalMinutes, 1);
 assert.equal(normalized.providerRequestTimeoutSeconds, 300);
 assert.equal(normalizeSettings({ providerRequestTimeoutSeconds: 120 }).providerRequestTimeoutSeconds, 180);
+assert.equal(normalized.groupTarget, "tab-groups");
+assert.equal(normalizeSettings({ groupTarget: "zen-folders" }).groupTarget, "zen-folders");
 
 assert.deepEqual(
   publicSettingsSummary({
@@ -76,7 +79,8 @@ assert.deepEqual(
     minimumGroupSize: 10,
     autoTidyEnabled: false,
     autoTidyIntervalMinutes: 30,
-    providerRequestTimeoutSeconds: 180
+    providerRequestTimeoutSeconds: 180,
+    groupTarget: "tab-groups"
   }
 );
 

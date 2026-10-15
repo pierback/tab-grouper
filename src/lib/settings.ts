@@ -1,4 +1,4 @@
-import type { PartialSettings, Provider, Settings } from "./types.js";
+import type { GroupTarget, PartialSettings, Provider, Settings } from "./types.js";
 import {
   DEFAULT_PROVIDER_REQUEST_TIMEOUT_SECONDS,
   normalizeProviderRequestTimeoutSeconds
@@ -22,7 +22,8 @@ export const DEFAULT_SETTINGS = {
   minimumGroupSize: 2,
   autoTidyEnabled: false,
   autoTidyIntervalMinutes: 30,
-  providerRequestTimeoutSeconds: DEFAULT_PROVIDER_REQUEST_TIMEOUT_SECONDS
+  providerRequestTimeoutSeconds: DEFAULT_PROVIDER_REQUEST_TIMEOUT_SECONDS,
+  groupTarget: "tab-groups"
 } as const satisfies Settings;
 
 export const ALLOWED_PROVIDERS = new Set<Provider>([
@@ -33,6 +34,8 @@ export const ALLOWED_PROVIDERS = new Set<Provider>([
   "openai",
   "anthropic"
 ]);
+
+const ALLOWED_GROUP_TARGETS = new Set<GroupTarget>(["tab-groups", "zen-folders"]);
 
 export async function getSettings(): Promise<Settings> {
   const stored = await chrome.storage.local.get(DEFAULT_SETTINGS);
@@ -67,7 +70,8 @@ export function publicSettingsSummary(settings: PartialSettings) {
     minimumGroupSize: normalizedSettings.minimumGroupSize,
     autoTidyEnabled: normalizedSettings.autoTidyEnabled,
     autoTidyIntervalMinutes: normalizedSettings.autoTidyIntervalMinutes,
-    providerRequestTimeoutSeconds: normalizedSettings.providerRequestTimeoutSeconds
+    providerRequestTimeoutSeconds: normalizedSettings.providerRequestTimeoutSeconds,
+    groupTarget: normalizedSettings.groupTarget
   };
 }
 
@@ -95,7 +99,8 @@ export function normalizeSettings(rawSettings: PartialSettings = {}): Settings {
     minimumGroupSize: clampNumber(raw.minimumGroupSize, 2, 10, DEFAULT_SETTINGS.minimumGroupSize),
     autoTidyEnabled: raw.autoTidyEnabled === true,
     autoTidyIntervalMinutes: clampNumber(raw.autoTidyIntervalMinutes, 1, 1440, DEFAULT_SETTINGS.autoTidyIntervalMinutes),
-    providerRequestTimeoutSeconds: normalizeProviderRequestTimeoutSeconds(raw.providerRequestTimeoutSeconds)
+    providerRequestTimeoutSeconds: normalizeProviderRequestTimeoutSeconds(raw.providerRequestTimeoutSeconds),
+    groupTarget: ALLOWED_GROUP_TARGETS.has(raw.groupTarget) ? raw.groupTarget : DEFAULT_SETTINGS.groupTarget
   };
 }
 

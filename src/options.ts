@@ -10,6 +10,8 @@ import {
   getProviderPermissions,
   isLocalCliProvider
 } from "./lib/provider_metadata.js";
+import { isGeckoExtensionRuntime } from "./lib/platform.js";
+import { getZenFoldersApi } from "./lib/zen_folders.js";
 import type { NativeModelInfo, PartialSettings, Provider, Settings } from "./lib/types.js";
 
 const form = document.querySelector<HTMLFormElement>("#settings-form")!;
@@ -26,6 +28,10 @@ const reasoningSelect = document.querySelector<HTMLSelectElement>("#reasoning")!
 const autoTidyEnabledInput = document.querySelector<HTMLInputElement>("#autoTidyEnabled")!;
 const autoTidyIntervalInput = document.querySelector<HTMLInputElement>("#autoTidyIntervalMinutes")!;
 const providerTimeoutInput = document.querySelector<HTMLInputElement>("#providerRequestTimeoutSeconds")!;
+const groupTargetField = document.querySelector<HTMLElement>("#group-target-field");
+const groupTargetSelect = document.querySelector<HTMLSelectElement>("#groupTarget");
+const chromeAiProviderOption = document.querySelector<HTMLOptionElement>("#provider-chrome-ai");
+const zenFoldersAvailable = getZenFoldersApi() !== null;
 
 const CLAUDE_MODEL_OPTIONS: NativeModelInfo[] = [
   { slug: "claude-fable-5", displayName: "Fable 5" },
@@ -109,6 +115,10 @@ includePageHintsInput?.addEventListener("change", () => {
   void persistCurrentForm();
 });
 
+groupTargetSelect?.addEventListener("change", () => {
+  void persistCurrentForm();
+});
+
 autoTidyEnabledInput.addEventListener("change", () => {
   updateAutoTidyControls();
   void persistCurrentForm();
@@ -152,6 +162,12 @@ async function initOptions() {
     } else {
       input.value = value;
     }
+  }
+  if (groupTargetField) {
+    groupTargetField.hidden = !zenFoldersAvailable;
+  }
+  if (chromeAiProviderOption) {
+    chromeAiProviderOption.hidden = isGeckoExtensionRuntime() && settings.provider !== "chrome-ai";
   }
   updateProviderSections(settings.provider);
   await refreshLocalCliControls(settings.provider, settings);
@@ -297,7 +313,8 @@ function readFormSettings(): PartialSettings {
     minimumGroupSize: Number(formData.get("minimumGroupSize")),
     autoTidyEnabled: autoTidyEnabledInput.checked,
     autoTidyIntervalMinutes: Number(autoTidyIntervalInput.value),
-    providerRequestTimeoutSeconds: Number(providerTimeoutInput.value)
+    providerRequestTimeoutSeconds: Number(providerTimeoutInput.value),
+    groupTarget: zenFoldersAvailable && groupTargetSelect ? groupTargetSelect.value : draftSettings.groupTarget
   };
 }
 

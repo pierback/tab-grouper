@@ -22,6 +22,7 @@ import {
   createUndoPlan,
   isUsableSnapshot
 } from "./lib/undo.js";
+import { getZenFoldersApi } from "./lib/zen_folders.js";
 import type { PageHint } from "./lib/hint_cache.js";
 import type { PlanCacheEntry } from "./lib/plan_cache.js";
 import type {
@@ -29,6 +30,7 @@ import type {
   AppliedGroup,
   CurrentWindowPlanResult,
   ExistingGroup,
+  PlanGroup,
   ProviderError,
   ProviderResult,
   Settings,
@@ -204,25 +206,22 @@ async function tidyCurrentWindow(windowId: number, grantedHintOrigins: string[] 
 
   try {
     for (const group of planResult.plan.groups) {
-      const groupId = await retryChromeTabMutation(() => chrome.tabs.group({ tabIds: group.tabIds as [number, ...number[]] }));
-      appliedGroups.push({
-        id: groupId,
-        name: group.name,
-        color: group.color,
-        count: group.tabIds.length
-      });
+      const appliedGroup = await createPlannedGroup(group, planResult.settings);
+      appliedGroups.push(appliedGroup);
       await saveLastTidySnapshot({
         ...baseSnapshot,
         state: "applying",
         appliedGroups
       });
-      await retryChromeTabMutation(() =>
-        chrome.tabGroups.update(groupId, {
-          title: group.name,
-          color: group.color,
-          collapsed: true
-        })
-      );
+      if (appliedGroup.kind === "tab-group") {
+        await retryChromeTabMutation(() =>
+          chrome.tabGroups.update(appliedGroup.id, {
+            title: group.name,
+            color: group.color,
+            collapsed: true
+          })
+        );
+      }
     }
 
     for (const assignment of planResult.plan.assignments) {
@@ -272,6 +271,18 @@ async function tidyCurrentWindow(windowId: number, grantedHintOrigins: string[] 
 
   invalidatePlanCache(planCache, windowId);
   return createTidyResponse(planResult, appliedGroups, appliedAssignments, expandedGroups.length);
+}
+
+async function createPlannedGroup(group: PlanGroup, settings: Settings): Promise<AppliedGroup> {
+  const zenFolders = settings.groupTarget === "zen-folders" ? getZenFoldersApi() : null;
+  if (zenFolders) {
+    const folder = await retryChromeTabMutation(() =>
+      zenFolders.create(group.tabIds, { label: group.name, collapsed: true })
+    );
+    return { id: folder.id, kind: "zen-folder", name: group.name, color: group.color, count: group.tabIds.length };
+  }
+  const groupId = await retryChromeTabMutation(() => chrome.tabs.group({ tabIds: group.tabIds as [number, ...number[]] }));
+  return { id: groupId, kind: "tab-group", name: group.name, color: group.color, count: group.tabIds.length };
 }
 
 async function collapseSurvivingGroups(windowId: number, expandedGroups: chrome.tabGroups.TabGroup[]): Promise<void> {
@@ -594,6 +605,12 @@ async function undoLastTidy(windowId: number) {
     await retryChromeTabMutation(() => chrome.tabs.ungroup(undoPlan.tabIdsToUngroup as [number, ...number[]]));
   }
 
+  for (const tabId of undoPlan.tabIdsToUnpin) {
+    await retryChromeTabMutation(() => chrome.tabs.update(tabId, { pinned: false }));
+  }
+
+  await removeEmptyZenFolders(undoPlan.zenFolderIdsToRemove);
+
   const survivingGroupIds = await getExistingGroupIds(snapshot.windowId);
   for (const originalGroup of undoPlan.originalGroups) {
     if (survivingGroupIds.has(originalGroup.id)) {
@@ -634,6 +651,16 @@ async function undoLastTidy(windowId: number) {
     undoAvailable: false,
     message: buildUndoSuccessMessage(undoPlan.tabIdsToUngroup.length, restoredGroupCount)
   };
+}
+
+async function removeEmptyZenFolders(folderIds: number[]): Promise<void> {
+  const zenFolders = getZenFoldersApi();
+  if (!zenFolders) {
+    return;
+  }
+  for (const folderId of folderIds) {
+    await retryChromeTabMutation(() => zenFolders.removeIfEmpty(folderId));
+  }
 }
 
 async function restoreGroupCollapseStates(

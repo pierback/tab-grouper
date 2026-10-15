@@ -28,7 +28,7 @@
               <option value="heuristic">Local heuristic</option>
               <option value="local-codex-cli">Local Codex CLI</option>
               <option value="local-claude-cli">Local Claude Code CLI</option>
-              <option value="chrome-ai">Chrome built-in AI</option>
+              <option id="provider-chrome-ai" value="chrome-ai">Chrome built-in AI</option>
               <option value="openai">OpenAI API</option>
               <option value="anthropic">Anthropic API</option>
             </select>
@@ -107,6 +107,13 @@
             <input id="allowHeuristicFallback" name="allowHeuristicFallback" type="checkbox">
             <span>Allow heuristic fallback when the smart provider fails</span>
           </label>
+          <label id="group-target-field" class="field compact-field" hidden>
+            <span>Create groups as</span>
+            <select id="groupTarget" name="groupTarget">
+              <option value="tab-groups">Tab groups</option>
+              <option value="zen-folders">Zen folders (pins grouped tabs)</option>
+            </select>
+          </label>
           <label class="field compact-field">
             <span>Minimum group size</span>
             <input id="minimumGroupSize" name="minimumGroupSize" type="number" min="2" max="10" step="1">
@@ -123,7 +130,7 @@
             <span>Run every <small>minutes</small></span>
             <input id="autoTidyIntervalMinutes" name="autoTidyIntervalMinutes" type="number" min="1" max="1440" step="1">
           </label>
-          <p class="helper-text">Runs quietly across normal Chrome windows. Every completed tidy leaves its latest undo available.</p>
+          <p class="helper-text">Runs quietly across normal browser windows. Every completed tidy leaves its latest undo available.</p>
         </section>
 
         <footer class="autosave-bar">

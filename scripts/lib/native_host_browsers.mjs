@@ -1,11 +1,14 @@
 const BROWSER_MANIFEST_TARGETS = Object.freeze([
-  { id: "chrome", label: "Google Chrome", manifestDirParts: ["Google", "Chrome"] },
-  { id: "brave", label: "Brave", manifestDirParts: ["BraveSoftware", "Brave-Browser"] },
-  { id: "edge", label: "Microsoft Edge", manifestDirParts: ["Microsoft Edge"] },
-  { id: "chromium", label: "Chromium", manifestDirParts: ["Chromium"] },
-  { id: "chrome-canary", label: "Chrome Canary", manifestDirParts: ["Google", "Chrome Canary"] },
+  { id: "chrome", label: "Google Chrome", family: "chromium", manifestDirParts: ["Google", "Chrome"] },
+  { id: "brave", label: "Brave", family: "chromium", manifestDirParts: ["BraveSoftware", "Brave-Browser"] },
+  { id: "edge", label: "Microsoft Edge", family: "chromium", manifestDirParts: ["Microsoft Edge"] },
+  { id: "chromium", label: "Chromium", family: "chromium", manifestDirParts: ["Chromium"] },
+  { id: "chrome-canary", label: "Chrome Canary", family: "chromium", manifestDirParts: ["Google", "Chrome Canary"] },
   // Unverified best-effort guess; correct if this differs from a real Helium install.
-  { id: "helium", label: "Helium", manifestDirParts: ["Helium"] }
+  { id: "helium", label: "Helium", family: "chromium", manifestDirParts: ["Helium"] },
+  { id: "firefox", label: "Firefox", family: "gecko", manifestDirParts: ["Mozilla"] },
+  // Verified with scripts/smoke-zen.mjs: Zen reads Firefox's directory, not Application Support/zen.
+  { id: "zen", label: "Zen", family: "gecko", manifestDirParts: ["Mozilla"] }
 ]);
 
 export function resolveBrowserManifestTargets(browser = "chrome") {

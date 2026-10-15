@@ -51,6 +51,7 @@ interface TestGroup {
   color: string;
   collapsed: boolean;
   windowId: number;
+  isZenFolder?: boolean;
 }
 
 type InputGroup = Partial<TestGroup> & Pick<TestGroup, "id" | "title" | "color" | "windowId">;
@@ -98,6 +99,12 @@ interface CreateFakeChromeConfig {
   onAlarmGet?: () => Promise<void>;
   groupDelayMs?: number;
   scriptingResult?: unknown;
+  zenFolders?: boolean;
+}
+
+interface FakeZenFolders {
+  create(tabIds: number[], options?: { label?: string; collapsed?: boolean }): Promise<{ id: number; label: string; collapsed: boolean; windowId: number; tabIds: number[] }>;
+  removeIfEmpty(folderId: number): Promise<boolean>;
 }
 
 interface FakeChrome {
@@ -115,12 +122,16 @@ interface FakeChrome {
   scripting: unknown;
   windows: unknown;
   alarms: unknown;
+  __browser?: { zenFolders: FakeZenFolders };
 }
+
+type ExperimentGlobal = typeof globalThis & { browser?: { zenFolders: FakeZenFolders } };
 
 const originalLanguageModel = (globalThis as typeof globalThis & TestGlobal).LanguageModel;
 
 async function importServiceWorker(chrome: FakeChrome) {
   globalThis.chrome = chrome as unknown as typeof globalThis.chrome;
+  (globalThis as ExperimentGlobal).browser = chrome.__browser;
   await import(`../../src/service_worker.js?test=${Date.now()}-${Math.random()}`);
 }
 
@@ -150,7 +161,8 @@ function createFakeChrome({
   onTabsQuery,
   onAlarmGet,
   groupDelayMs = 0,
-  scriptingResult = null
+  scriptingResult = null,
+  zenFolders = false
 }: CreateFakeChromeConfig): FakeChrome {
   const state = {
     tabs: tabs.map((tab) => ({ pinned: false, groupId: -1, ...tab })),
@@ -258,6 +270,13 @@ function createFakeChrome({
         cleanupEmptyGroups();
         return groupId;
       },
+      async update(tabId: number, updateProperties: { pinned?: boolean }) {
+        const tab = findTab(tabId);
+        if (typeof updateProperties.pinned === "boolean") {
+          tab.pinned = updateProperties.pinned;
+        }
+        return { ...tab };
+      },
       async ungroup(tabIds: number | number[]) {
         const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
         for (const tabId of ids) {
@@ -345,6 +364,38 @@ function createFakeChrome({
     }
   } as unknown as FakeChrome;
 
+  if (zenFolders) {
+    chrome.__browser = {
+      zenFolders: {
+        async create(tabIds, options = {}) {
+          const id = state.nextGroupId++;
+          const windowId = findTab(tabIds[0]!).windowId;
+          state.groups.set(id, {
+            id,
+            title: options.label ?? "",
+            color: "zen-workspace-color",
+            collapsed: Boolean(options.collapsed),
+            windowId,
+            isZenFolder: true
+          });
+          for (const tabId of tabIds) {
+            const tab = findTab(tabId);
+            tab.groupId = id;
+            tab.pinned = true;
+          }
+          return { id, label: options.label ?? "", collapsed: Boolean(options.collapsed), windowId, tabIds };
+        },
+        async removeIfEmpty(folderId) {
+          if (!state.groups.has(folderId) || state.tabs.some((tab) => tab.groupId === folderId)) {
+            return false;
+          }
+          state.groups.delete(folderId);
+          return true;
+        }
+      }
+    };
+  }
+
   function findTab(tabId: number) {
     const tab = state.tabs.find((candidate) => candidate.id === tabId);
     if (!tab) {
@@ -354,8 +405,9 @@ function createFakeChrome({
   }
 
   function cleanupEmptyGroups() {
-    for (const groupId of Array.from(state.groups.keys())) {
-      if (!state.tabs.some((tab) => tab.groupId === groupId)) {
+    for (const [groupId, group] of Array.from(state.groups.entries())) {
+      // Zen folders keep a hidden placeholder tab and survive without real tabs.
+      if (!group.isZenFolder && !state.tabs.some((tab) => tab.groupId === groupId)) {
         state.groups.delete(groupId);
       }
     }

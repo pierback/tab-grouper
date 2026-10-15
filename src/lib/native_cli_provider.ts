@@ -178,7 +178,7 @@ export async function listNativeModels(provider: Provider | LocalCliProvider): P
 
 function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest | NativeListModelsRequest, timeoutMs: number): Promise<NativeResponse> {
   const portEffect = Effect.callback<NativeResponse, ProviderError>((resume) => {
-    let port: chrome.runtime.Port;
+    let port: GeckoCompatiblePort;
     try {
       port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
     } catch (error) {
@@ -206,7 +206,7 @@ function sendNativeRequest(request: NativePlanRequest | NativeStatusRequest | Na
     });
 
     port.onDisconnect.addListener(() => {
-      resume(Effect.fail(classifyNativeError(chrome.runtime.lastError)));
+      resume(Effect.fail(classifyNativeError(chrome.runtime.lastError ?? port.error)));
     });
 
     try {
@@ -269,9 +269,12 @@ async function ensureNativeMessagingPermission() {
   }
 }
 
+// Firefox reports native port failures on port.error instead of runtime.lastError.
+type GeckoCompatiblePort = chrome.runtime.Port & { error?: Error | null };
+
 function classifyNativeError(error: unknown) {
   const message = readErrorMessage(error, "Local CLI bridge disconnected.");
-  if (/host.*not found|specified native messaging host not found/i.test(message)) {
+  if (/host.*not found|specified native messaging host not found|no such native application/i.test(message)) {
     return createProviderError("native-host-not-found", "Tab Grouper native bridge is not installed.");
   }
   if (/forbidden|not allowed|access/i.test(message)) {

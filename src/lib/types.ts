@@ -10,6 +10,10 @@ export type Provider =
 
 export type LocalCliProvider = "codex" | "claude";
 
+export type GroupTarget = "tab-groups" | "zen-folders";
+
+export type AppliedGroupKind = "tab-group" | "zen-folder";
+
 export type CostBasis = "reported" | "api-estimate";
 
 export interface NativeModelInfo {
@@ -38,6 +42,7 @@ export interface Settings {
   autoTidyEnabled: boolean;
   autoTidyIntervalMinutes: number;
   providerRequestTimeoutSeconds: number;
+  groupTarget: GroupTarget;
 }
 
 export type PartialSettings = Partial<Settings> | Record<string, unknown>;
@@ -135,6 +140,7 @@ export interface ExistingGroup {
 
 export interface AppliedGroup {
   id: number;
+  kind: AppliedGroupKind;
   name: string;
   color: TabGroupColor;
   count: number;
@@ -162,6 +168,7 @@ export interface CurrentWindowPlanResult {
 export interface TidySnapshotTab {
   id: number;
   groupId: number;
+  pinned?: boolean;
   windowId?: number;
   index?: number;
 }
@@ -193,6 +200,8 @@ export interface TidySnapshot {
 export interface UndoPlan {
   canUndo: boolean;
   tabIdsToUngroup: number[];
+  tabIdsToUnpin: number[];
+  zenFolderIdsToRemove: number[];
   originalGroups: Array<TidySnapshotGroup & { tabIds: number[] }>;
   groupCollapseUpdates: Array<{ groupId: number; collapsed: boolean }>;
   tabMoves: Array<{ tabId: number; index: number }>;

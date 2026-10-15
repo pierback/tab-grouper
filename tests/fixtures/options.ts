@@ -45,6 +45,9 @@ interface FakeElements {
   autoTidyEnabled: FakeElement;
   autoTidyIntervalMinutes: FakeElement;
   providerRequestTimeoutSeconds: FakeElement;
+  groupTarget: FakeElement;
+  "group-target-field": FakeElement;
+  "provider-chrome-ai": FakeElement;
   "data-mode": FakeElement;
   "data-summary": FakeElement;
   "test-native-bridge": FakeElement;
@@ -83,7 +86,11 @@ interface ImportOptionsConfig {
   deferNativeModelResponses?: boolean;
   deferNativeStatusResponses?: boolean;
   deferStorageWrites?: boolean;
+  gecko?: boolean;
+  zenFolders?: boolean;
 }
+
+type ExperimentGlobal = typeof globalThis & { browser?: { zenFolders: Record<string, never> } };
 
 async function importOptions({
   permissionGrant = true,
@@ -94,9 +101,12 @@ async function importOptions({
   deferPermissionRequests = false,
   deferNativeModelResponses = false,
   deferNativeStatusResponses = false,
-  deferStorageWrites = false
+  deferStorageWrites = false,
+  gecko = false,
+  zenFolders = false
 }: ImportOptionsConfig = {}) {
   const elements = createFakeElements();
+  (globalThis as ExperimentGlobal).browser = zenFolders ? { zenFolders: {} } : undefined;
   const fakeChrome = createFakeChrome({
     permissionGrant,
     nativePermissionGranted,
@@ -106,7 +116,8 @@ async function importOptions({
     deferPermissionRequests,
     deferNativeModelResponses,
     deferNativeStatusResponses,
-    deferStorageWrites
+    deferStorageWrites,
+    gecko
   });
   globalThis.chrome = fakeChrome as unknown as typeof globalThis.chrome;
   globalThis.document = createFakeDocument(elements) as unknown as Document;
@@ -157,8 +168,11 @@ function createFakeElements(): FakeElements {
     "data-mode": createElement("data-mode", "strong"),
     "data-summary": createElement("data-summary", "p"),
     "test-native-bridge": createElement("test-native-bridge", "button"),
-    "native-bridge-status": createElement("native-bridge-status", "span")
+    "native-bridge-status": createElement("native-bridge-status", "span"),
+    "group-target-field": createElement("group-target-field", "label"),
+    "provider-chrome-ai": createElement("provider-chrome-ai", "option")
   };
+  elementById["group-target-field"]!.hidden = true;
 
   const fieldDefinitions: Array<[string, string, string | boolean]> = [
     ["provider", "select", "heuristic"],
@@ -176,7 +190,8 @@ function createFakeElements(): FakeElements {
     ["minimumGroupSize", "number", "2"],
     ["autoTidyEnabled", "checkbox", false],
     ["autoTidyIntervalMinutes", "number", "30"],
-    ["providerRequestTimeoutSeconds", "number", "120"]
+    ["providerRequestTimeoutSeconds", "number", "120"],
+    ["groupTarget", "select", "tab-groups"]
   ];
 
   for (const [id, type, value] of fieldDefinitions) {
@@ -282,8 +297,9 @@ function createFakeChrome({
   deferPermissionRequests,
   deferNativeModelResponses,
   deferNativeStatusResponses,
-  deferStorageWrites
-}: Required<ImportOptionsConfig>) {
+  deferStorageWrites,
+  gecko
+}: Omit<Required<ImportOptionsConfig>, "zenFolders">) {
   const state = {
     storage: { ...stored },
     permissionRequests: [] as chrome.permissions.Permissions[],
@@ -337,6 +353,9 @@ function createFakeChrome({
     },
     runtime: {
       lastError: null,
+      getURL(path: string) {
+        return `${gecko ? "moz-extension" : "chrome-extension"}://test-extension/${path}`;
+      },
       connectNative() {
         const messageListeners: Array<(message: Record<string, unknown>) => void> = [];
         const disconnectListeners: Array<() => void> = [];

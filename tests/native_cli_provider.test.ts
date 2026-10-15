@@ -42,6 +42,7 @@ interface CreateChromeConfig {
   hasPermission?: boolean;
   nativeResponse?: (message: NativeRequest) => NativeResponse;
   disconnectError?: string | null;
+  geckoPortError?: string | null;
   postMessageError?: string | null;
 }
 
@@ -50,7 +51,7 @@ function providerError(error: unknown): ProviderError {
   return error as ProviderError;
 }
 
-function createChrome({ hasPermission = true, nativeResponse, disconnectError = null, postMessageError = null }: CreateChromeConfig = {}) {
+function createChrome({ hasPermission = true, nativeResponse, disconnectError = null, geckoPortError = null, postMessageError = null }: CreateChromeConfig = {}) {
   const state = {
     sentMessages: [] as NativeRequest[],
     hostNames: [] as string[]
@@ -69,7 +70,8 @@ function createChrome({ hasPermission = true, nativeResponse, disconnectError = 
         state.hostNames.push(hostName);
         const messageListeners: Array<(response: NativeResponse) => void> = [];
         const disconnectListeners: Array<() => void> = [];
-        return {
+        const port = {
+          error: null as Error | null,
           onMessage: {
             addListener(callback: (response: NativeResponse) => void) {
               messageListeners.push(callback);
@@ -86,6 +88,13 @@ function createChrome({ hasPermission = true, nativeResponse, disconnectError = 
             }
             state.sentMessages.push(message);
             setTimeout(() => {
+              if (geckoPortError) {
+                port.error = new Error(geckoPortError);
+                for (const callback of disconnectListeners) {
+                  callback();
+                }
+                return;
+              }
               if (disconnectError) {
                 chrome.runtime.lastError = { message: disconnectError };
                 for (const callback of disconnectListeners) {
@@ -101,6 +110,7 @@ function createChrome({ hasPermission = true, nativeResponse, disconnectError = 
           },
           disconnect() {}
         };
+        return port;
       }
     }
   };
@@ -433,6 +443,17 @@ const tabs = [
 {
   const chrome = createChrome({
     disconnectError: "Specified native messaging host not found."
+  });
+  globalThis.chrome = chrome as unknown as typeof globalThis.chrome;
+  await assert.rejects(
+    createPlanWithNativeCli(tabs, { minimumGroupSize: 2 }, "codex"),
+    (error) => providerError(error).providerErrorKind === "native-host-not-found"
+  );
+}
+
+{
+  const chrome = createChrome({
+    geckoPortError: "No such native application com.fabianpieringer.tab_grouper"
   });
   globalThis.chrome = chrome as unknown as typeof globalThis.chrome;
   await assert.rejects(
